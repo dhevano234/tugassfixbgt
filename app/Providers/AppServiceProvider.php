@@ -25,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Carbon\Carbon::setLocale('id');
+        date_default_timezone_set('Asia/Jakarta');
         // LOAD AUDIO SYSTEM SESUAI PANEL
         
         // Untuk Panel Admin: Load queue-audio.js (global system)

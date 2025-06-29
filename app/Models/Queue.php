@@ -1,6 +1,6 @@
 <?php
 // File: app/Models/Queue.php
-// PERBAIKAN LENGKAP untuk Queue Model dengan relationship dokter yang benar
+// PERBAIKAN LENGKAP untuk Queue Model dengan relationship dokter yang benar + TIMEZONE FIX
 
 namespace App\Models;
 
@@ -139,11 +139,112 @@ class Queue extends Model
     }
 
     /**
-     * Get tanggal antrian dalam format yang mudah dibaca
+     * ✅ PERBAIKAN TIMEZONE: Get tanggal antrian dalam format yang mudah dibaca dengan timezone Indonesia
      */
     public function getFormattedTanggalAttribute(): string
     {
-        return $this->created_at->format('d F Y');
+        return $this->created_at->setTimezone('Asia/Jakarta')->format('d F Y');
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk waktu ambil antrian dengan timezone Indonesia
+     */
+    public function getWaktuAmbilAttribute(): string
+    {
+        return $this->created_at->setTimezone('Asia/Jakarta')->format('H:i');
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk waktu dipanggil dengan timezone Indonesia
+     */
+    public function getWaktuDipanggilAttribute(): ?string
+    {
+        return $this->called_at ? $this->called_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk waktu selesai dengan timezone Indonesia
+     */
+    public function getWaktuSelesaiAttribute(): ?string
+    {
+        return $this->finished_at ? $this->finished_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk waktu dilayani dengan timezone Indonesia
+     */
+    public function getWaktuDilayaniAttribute(): ?string
+    {
+        return $this->served_at ? $this->served_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk waktu dibatalkan dengan timezone Indonesia
+     */
+    public function getWaktuDibatalkanAttribute(): ?string
+    {
+        return $this->canceled_at ? $this->canceled_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Accessor untuk datetime lengkap dengan timezone Indonesia
+     */
+    public function getFullDateTimeAttribute(): string
+    {
+        return $this->created_at->setTimezone('Asia/Jakarta')->format('l, d F Y H:i');
+    }
+
+    /**
+     * ✅ TAMBAHAN: Get informasi timeline antrian
+     */
+    public function getTimelineInfoAttribute(): array
+    {
+        $timeline = [];
+        
+        $timeline['dibuat'] = [
+            'waktu' => $this->waktu_ambil,
+            'status' => 'Antrian dibuat',
+            'icon' => 'fas fa-plus-circle',
+            'color' => 'primary'
+        ];
+        
+        if ($this->called_at) {
+            $timeline['dipanggil'] = [
+                'waktu' => $this->waktu_dipanggil,
+                'status' => 'Antrian dipanggil',
+                'icon' => 'fas fa-bell',
+                'color' => 'warning'
+            ];
+        }
+        
+        if ($this->served_at) {
+            $timeline['dilayani'] = [
+                'waktu' => $this->waktu_dilayani,
+                'status' => 'Mulai dilayani',
+                'icon' => 'fas fa-user-md',
+                'color' => 'info'
+            ];
+        }
+        
+        if ($this->finished_at) {
+            $timeline['selesai'] = [
+                'waktu' => $this->waktu_selesai,
+                'status' => 'Selesai dilayani',
+                'icon' => 'fas fa-check-circle',
+                'color' => 'success'
+            ];
+        }
+        
+        if ($this->canceled_at) {
+            $timeline['dibatalkan'] = [
+                'waktu' => $this->waktu_dibatalkan,
+                'status' => 'Antrian dibatalkan',
+                'icon' => 'fas fa-times-circle',
+                'color' => 'danger'
+            ];
+        }
+        
+        return $timeline;
     }
 
     // ✅ HELPER METHODS
@@ -180,6 +281,33 @@ class Queue extends Model
         return in_array($this->status, ['finished', 'canceled']);
     }
 
+    /**
+     * ✅ TAMBAHAN: Check apakah antrian sedang aktif (menunggu atau dilayani)
+     */
+    public function isActive(): bool
+    {
+        return in_array($this->status, ['waiting', 'serving']);
+    }
+
+    /**
+     * ✅ TAMBAHAN: Get estimasi waktu tunggu (dalam menit)
+     */
+    public function getEstimasiTungguAttribute(): ?int
+    {
+        if ($this->status !== 'waiting') {
+            return null;
+        }
+        
+        // Hitung antrian yang ada di depan
+        $antrianDidepan = self::where('service_id', $this->service_id)
+            ->where('status', 'waiting')
+            ->where('created_at', '<', $this->created_at)
+            ->count();
+        
+        // Estimasi 15 menit per antrian
+        return $antrianDidepan * 15;
+    }
+
     // ✅ SCOPE METHODS
 
     /**
@@ -214,5 +342,21 @@ class Queue extends Model
     public function scopeWithStatus($query, $status)
     {
         return $query->where('status', $status);
+    }
+
+    /**
+     * ✅ TAMBAHAN: Scope untuk antrian yang aktif (waiting atau serving)
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereIn('status', ['waiting', 'serving']);
+    }
+
+    /**
+     * ✅ TAMBAHAN: Scope untuk antrian yang selesai
+     */
+    public function scopeCompleted($query)
+    {
+        return $query->whereIn('status', ['finished', 'canceled']);
     }
 }

@@ -62,6 +62,10 @@
                         <div class="detail-row">
                             <span><i class="fas fa-id-card"></i> {{ $antrianTerbaru->user->nomor_ktp ?? 'Belum diisi' }}</span>
                         </div>
+                        {{-- ✅ TAMBAHAN: Informasi Nomor Rekam Medis --}}
+                        <div class="detail-row">
+                            <span><i class="fas fa-file-medical"></i> No. RM: {{ $antrianTerbaru->user->medical_record_number ?? 'Belum ada' }}</span>
+                        </div>
                     </div>
                 </div>
                 
@@ -72,9 +76,29 @@
                         </span>
                         <small>Layanan Klinik</small>
                     </div>
-                    <div class="date-info">
-                        <small><i class="fas fa-calendar"></i> {{ $antrianTerbaru->formatted_tanggal }}</small>
+                    
+                    {{-- ✅ PERBAIKAN WAKTU: Tambahkan jam ambil antrian --}}
+                    <div class="time-info">
+                        <div class="date-info">
+                            <small><i class="fas fa-calendar"></i> {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('d F Y') }}</small>
+                        </div>
+                        <div class="time-detail">
+                            <small><i class="fas fa-clock"></i> Jam Ambil: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
+                        </div>
+                        {{-- Tampilkan waktu dipanggil jika ada --}}
+                        @if($antrianTerbaru->called_at)
+                        <div class="time-detail">
+                            <small><i class="fas fa-bell"></i> Dipanggil: {{ $antrianTerbaru->called_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
+                        </div>
+                        @endif
+                        {{-- Tampilkan waktu selesai jika ada --}}
+                        @if($antrianTerbaru->finished_at)
+                        <div class="time-detail">
+                            <small><i class="fas fa-check-circle"></i> Selesai: {{ $antrianTerbaru->finished_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
+                        </div>
+                        @endif
                     </div>
+                    
                     <div class="status-info">
                         <span class="badge badge-{{ $antrianTerbaru->status_badge }}">
                             {{ $antrianTerbaru->status_label }}
@@ -255,11 +279,15 @@
 .detail-row span {
     color: #7f8c8d;
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .detail-row i {
     width: 15px;
     margin-right: 5px;
+    flex-shrink: 0;
 }
 
 .antrian-meta {
@@ -267,6 +295,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    min-width: 200px;
 }
 
 .poli-info small {
@@ -275,7 +304,36 @@
     margin-top: 5px;
 }
 
-.date-info, .status-info {
+/* ✅ PERBAIKAN: Styling untuk informasi waktu yang lebih baik */
+.time-info {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 8px;
+    border-left: 3px solid #3498db;
+    margin: 5px 0;
+}
+
+.date-info, .time-detail {
+    margin-bottom: 3px;
+}
+
+.date-info small {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.time-detail small {
+    color: #7f8c8d;
+    display: block;
+}
+
+.time-detail i {
+    width: 12px;
+    margin-right: 5px;
+    color: #3498db;
+}
+
+.status-info {
     margin-top: 5px;
 }
 
@@ -375,6 +433,7 @@
     
     .antrian-meta {
         text-align: left;
+        min-width: auto;
     }
     
     .detail-row {
@@ -384,6 +443,10 @@
     
     .antrian-actions {
         justify-content: center;
+    }
+
+    .time-info {
+        margin: 10px 0;
     }
 }
 
