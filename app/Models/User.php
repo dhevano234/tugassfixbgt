@@ -1,5 +1,5 @@
 <?php
-// File: app/Models/User.php - PERBAIKAN LENGKAP
+// File: app/Models/User.php - UPDATED dengan Medical Record Number
 
 namespace App\Models;
 
@@ -13,9 +13,6 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     */
     protected $fillable = [
         'name',
         'email',
@@ -29,17 +26,11 @@ class User extends Authenticatable
         'medical_record_number', // ✅ TAMBAH INI
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     */
     protected function casts(): array
     {
         return [
@@ -50,7 +41,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Boot method untuk auto-generate medical record number
+     * ✅ BOOT METHOD - Auto-generate medical record number untuk user role 'user'
      */
     protected static function boot()
     {
@@ -62,16 +53,24 @@ class User extends Authenticatable
                 $user->role = 'user';
             }
             
-            // Generate medical record number untuk user dengan role 'user'
-            if ($user->role === 'user' && !$user->medical_record_number) {
+            // ✅ GENERATE medical record number untuk user dengan role 'user'
+            if ($user->role === 'user') {
+                $user->medical_record_number = self::generateMedicalRecordNumber();
+            }
+        });
+
+        // ✅ HANDLE UPDATE: Jika role berubah menjadi 'user' dan belum ada nomor RM
+        static::updating(function ($user) {
+            if ($user->role === 'user' && empty($user->medical_record_number)) {
                 $user->medical_record_number = self::generateMedicalRecordNumber();
             }
         });
     }
 
     /**
-     * ✅ FIX: Generate unique medical record number
+     * ✅ GENERATE unique medical record number
      * Format: RM-YYYYMMDD-XXXX
+     * Contoh: RM-20250629-0001
      */
     public static function generateMedicalRecordNumber(): string
     {
@@ -99,7 +98,7 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ FIX: Assign medical record number to existing user
+     * ✅ METHOD untuk assign medical record number ke existing user
      */
     public function assignMedicalRecordNumber(): void
     {
@@ -110,36 +109,60 @@ class User extends Authenticatable
     }
 
     /**
-     * Relationship ke Queue (antrian yang dibuat user)
+     * ✅ STATIC METHOD untuk get atau create user berdasarkan KTP
+     * Digunakan saat user walk-in di kiosk atau registrasi manual
      */
+    public static function getOrCreateByKtp(string $ktp, array $userData = []): self
+    {
+        // Cari user berdasarkan KTP
+        $user = self::where('nomor_ktp', $ktp)->first();
+        
+        if (!$user) {
+            // Buat user baru jika tidak ditemukan
+            $user = self::create(array_merge([
+                'nomor_ktp' => $ktp,
+                'role' => 'user',
+                'name' => $userData['name'] ?? 'Pasien - ' . substr($ktp, -4),
+                'email' => $userData['email'] ?? 'patient' . substr($ktp, -4) . '@klinik.local',
+                'password' => bcrypt('password123'), // Default password
+                'address' => $userData['address'] ?? 'Alamat belum diisi',
+                'phone' => $userData['phone'] ?? null,
+                'gender' => $userData['gender'] ?? null,
+                'birth_date' => $userData['birth_date'] ?? null,
+            ], $userData));
+        } else {
+            // Jika user ada tapi belum punya nomor RM, generate
+            if (!$user->medical_record_number) {
+                $user->assignMedicalRecordNumber();
+            }
+        }
+        
+        return $user;
+    }
+
+    // ===== EXISTING RELATIONSHIPS =====
+    
     public function queues(): HasMany
     {
         return $this->hasMany(Queue::class);
     }
 
-    /**
-     * Relationship ke MedicalRecord (sebagai pasien)
-     */
     public function medicalRecordsAsPatient(): HasMany
     {
         return $this->hasMany(MedicalRecord::class, 'user_id');
     }
 
-    /**
-     * Relationship ke MedicalRecord (sebagai dokter)
-     */
     public function medicalRecordsAsDoctor(): HasMany
     {
         return $this->hasMany(MedicalRecord::class, 'doctor_id');
     }
 
-    /**
-     * Alias untuk backward compatibility
-     */
     public function medicalRecords(): HasMany
     {
         return $this->medicalRecordsAsPatient();
     }
+
+    // ===== ACCESSOR METHODS =====
 
     /**
      * Cek apakah data profil sudah lengkap untuk buat antrian
@@ -149,7 +172,8 @@ class User extends Authenticatable
         return !empty($this->phone) && 
                !empty($this->gender) && 
                !empty($this->birth_date) && 
-               !empty($this->address);
+               !empty($this->address) &&
+               $this->address !== 'Alamat belum diisi';
     }
 
     /**
@@ -162,34 +186,17 @@ class User extends Authenticatable
         if (empty($this->phone)) $missing[] = 'Nomor HP';
         if (empty($this->gender)) $missing[] = 'Jenis Kelamin';
         if (empty($this->birth_date)) $missing[] = 'Tanggal Lahir';
-        if (empty($this->address)) $missing[] = 'Alamat';
+        if (empty($this->address) || $this->address === 'Alamat belum diisi') $missing[] = 'Alamat';
         
         return $missing;
     }
 
     /**
-     * Check if user is admin
+     * Check if user is admin/dokter/user
      */
-    public function isAdmin(): bool
-    {
-        return $this->role === 'admin';
-    }
-
-    /**
-     * Check if user is dokter
-     */
-    public function isDokter(): bool
-    {
-        return $this->role === 'dokter';
-    }
-
-    /**
-     * Check if user is pasien/user
-     */
-    public function isUser(): bool
-    {
-        return $this->role === 'user';
-    }
+    public function isAdmin(): bool { return $this->role === 'admin'; }
+    public function isDokter(): bool { return $this->role === 'dokter'; }
+    public function isUser(): bool { return $this->role === 'user'; }
 
     /**
      * Get user's age
@@ -214,10 +221,57 @@ class User extends Authenticatable
     }
 
     /**
-     * Get formatted medical record number untuk display
+     * ✅ GET formatted medical record number untuk display
      */
     public function getFormattedMrnAttribute(): string
     {
         return $this->medical_record_number ?? 'Belum ada';
+    }
+
+    /**
+     * ✅ CHECK apakah user punya nomor rekam medis
+     */
+    public function hasMedicalRecordNumber(): bool
+    {
+        return !empty($this->medical_record_number);
+    }
+
+    /**
+     * ✅ GET display name untuk temporary patient
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        // Jika nama seperti "Pasien - 1234", tampilkan dengan nomor RM
+        if (str_contains($this->name, 'Pasien - ') && $this->medical_record_number) {
+            return $this->medical_record_number . ' - ' . $this->name;
+        }
+        
+        return $this->name;
+    }
+
+    // ===== SCOPES =====
+
+    /**
+     * Scope untuk user dengan role 'user' saja
+     */
+    public function scopePatients($query)
+    {
+        return $query->where('role', 'user');
+    }
+
+    /**
+     * Scope untuk user yang sudah punya nomor rekam medis
+     */
+    public function scopeWithMedicalRecord($query)
+    {
+        return $query->whereNotNull('medical_record_number');
+    }
+
+    /**
+     * Scope untuk user yang belum punya nomor rekam medis
+     */
+    public function scopeWithoutMedicalRecord($query)
+    {
+        return $query->whereNull('medical_record_number');
     }
 }

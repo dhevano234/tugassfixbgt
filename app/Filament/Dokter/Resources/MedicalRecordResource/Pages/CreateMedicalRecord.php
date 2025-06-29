@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php
+// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php - SIMPLIFIED
 
 namespace App\Filament\Dokter\Resources\MedicalRecordResource\Pages;
 
@@ -32,7 +32,7 @@ class CreateMedicalRecord extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Auto-set doctor_id dengan Auth facade yang sudah di-import
+        // Auto-set doctor_id
         $data['doctor_id'] = Auth::id();
         
         // ✅ VALIDASI: Pastikan user_id adalah role 'user'
@@ -43,6 +43,9 @@ class CreateMedicalRecord extends CreateRecord
             }
         }
         
+        // ✅ REMOVE display_medical_record_number dari data yang disimpan
+        unset($data['display_medical_record_number']);
+        
         return $data;
     }
 
@@ -51,7 +54,7 @@ class CreateMedicalRecord extends CreateRecord
     {
         parent::mount();
         
-        // Check untuk parameter dari queue - UBAH dari patient_id ke user_id
+        // Check untuk parameter dari queue
         $userId = request()->get('user_id');
         $queueNumber = request()->get('queue_number');
         $serviceName = request()->get('service');
@@ -61,15 +64,17 @@ class CreateMedicalRecord extends CreateRecord
             
             // ✅ VALIDASI: Pastikan user ada dan role-nya 'user'
             if ($user && $user->role === 'user') {
-                // Auto-populate user field
+                // Auto-populate user field dan nomor RM
                 $this->form->fill([
                     'user_id' => $userId,
+                    'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
                 ]);
                 
                 // Show notification dengan info user
                 Notification::make()
                     ->title('Pasien Dari Antrian')
-                    ->body("Auto-selected: {$user->name} - {$user->email}" . 
+                    ->body("Auto-selected: {$user->name}" . 
+                           ($user->medical_record_number ? " | No. RM: {$user->medical_record_number}" : " | Belum ada No. RM") .
                            ($queueNumber ? " (Antrian: {$queueNumber})" : ""))
                     ->success()
                     ->duration(5000)

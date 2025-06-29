@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource.php
+// File: app/Filament/Dokter/Resources/MedicalRecordResource.php - SIMPLIFIED with Auto-fill
 
 namespace App\Filament\Dokter\Resources;
 
@@ -12,6 +12,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class MedicalRecordResource extends Resource
 {
@@ -39,60 +40,96 @@ class MedicalRecordResource extends Resource
                     })
                     ->visible(fn () => request()->has('queue_number')),
 
-                // 1. Pasien (Required) - FILTER HANYA ROLE USER
-                Forms\Components\Select::make('user_id')
-                    ->label('Pasien')
-                    ->options(function () {
-                        // ✅ FILTER: Hanya ambil user dengan role 'user'
-                        return User::where('role', 'user')
-                            ->orderBy('name')
-                            ->pluck('name', 'id')
-                            ->map(function ($name, $id) {
-                                $user = User::find($id);
-                                return "{$name} ({$user->email})";
-                            });
-                    })
-                    ->required()
-                    ->searchable()
-                    ->preload()
-                    ->disabled(fn () => request()->has('user_id')) // Disable jika auto-populated
-                    ->helperText(fn () => request()->has('user_id') 
-                        ? 'Pasien otomatis dipilih dari antrian' 
-                        : 'Hanya menampilkan user dengan role pasien'),
+                // ✅ SECTION: Data Pasien - Grid 2 kolom
+                Forms\Components\Section::make('Data Pasien')
+                    ->description('Pilih pasien untuk membuat rekam medis')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                // ✅ 1. Kolom Nama Pasien
+                                Forms\Components\Select::make('user_id')
+                                    ->label('Nama Pasien')
+                                    ->options(function () {
+                                        return User::where('role', 'user')
+                                            ->orderBy('name')
+                                            ->pluck('name', 'id');
+                                    })
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->reactive() // ✅ REACTIVE untuk auto-fill
+                                    ->disabled(fn () => request()->has('user_id'))
+                                    ->helperText('Pilih nama pasien dari daftar')
+                                    ->afterStateUpdated(function ($state, callable $set) {
+                                        // ✅ AUTO-FILL nomor rekam medis
+                                        if ($state) {
+                                            $user = User::find($state);
+                                            if ($user && $user->medical_record_number) {
+                                                $set('display_medical_record_number', $user->medical_record_number);
+                                            } else {
+                                                $set('display_medical_record_number', 'Belum ada nomor rekam medis');
+                                            }
+                                        } else {
+                                            $set('display_medical_record_number', '');
+                                        }
+                                    }),
 
-                // 2. Gejala/Keluhan Utama (Required)
-                Forms\Components\Textarea::make('chief_complaint')
-                    ->label('Gejala/Keluhan Utama')
-                    ->required()
-                    ->rows(3)
-                    ->placeholder('Jelaskan gejala atau keluhan utama pasien...'),
+                                // ✅ 2. Kolom Nomor Rekam Medis (Display Only)
+                                Forms\Components\TextInput::make('display_medical_record_number')
+                                    ->label('Nomor Rekam Medis')
+                                    ->disabled()
+                                    ->dehydrated(false) // Tidak disimpan ke database
+                                    ->placeholder('Akan terisi otomatis setelah pilih pasien')
+                                    ->helperText('Nomor rekam medis akan terisi otomatis')
+                                    ->default(''),
+                            ]),
+                    ])
+                    ->collapsible(),
 
-                // 3. Tanda Vital (Optional)
-                Forms\Components\Textarea::make('vital_signs')
-                    ->label('Tanda Vital')
-                    ->rows(2)
-                    ->placeholder('TD: 120/80 mmHg, Nadi: 80x/menit, Suhu: 36.5°C'),
+                // ✅ SECTION: Data Pemeriksaan
+                Forms\Components\Section::make('Data Pemeriksaan')
+                    ->description('Isi hasil pemeriksaan pasien')
+                    ->schema([
+                        // Gejala/Keluhan Utama (Required)
+                        Forms\Components\Textarea::make('chief_complaint')
+                            ->label('Gejala/Keluhan Utama')
+                            ->required()
+                            ->rows(3)
+                            ->placeholder('Jelaskan gejala atau keluhan utama pasien...')
+                            ->columnSpanFull(),
 
-                // 4. Diagnosis (Required)
-                Forms\Components\Textarea::make('diagnosis')
-                    ->label('Diagnosis')
-                    ->required()
-                    ->rows(2)
-                    ->placeholder('Tuliskan diagnosis berdasarkan pemeriksaan...'),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                // Tanda Vital (Optional)
+                                Forms\Components\Textarea::make('vital_signs')
+                                    ->label('Tanda Vital')
+                                    ->rows(3)
+                                    ->placeholder('TD: 120/80 mmHg' . "\n" . 'Nadi: 80x/menit' . "\n" . 'Suhu: 36.5°C' . "\n" . 'RR: 20x/menit'),
 
-                // 5. Resep Obat (Optional)
-                Forms\Components\Textarea::make('prescription')
-                    ->label('Resep Obat')
-                    ->rows(3)
-                    ->placeholder('Paracetamol 500mg 3x1, Amoxicillin 250mg 3x1'),
+                                // Diagnosis (Required)
+                                Forms\Components\Textarea::make('diagnosis')
+                                    ->label('Diagnosis')
+                                    ->required()
+                                    ->rows(3)
+                                    ->placeholder('Tuliskan diagnosis berdasarkan pemeriksaan...'),
+                            ]),
 
-                // 6. Catatan Tambahan (Optional)
-                Forms\Components\Textarea::make('additional_notes')
-                    ->label('Catatan Tambahan')
-                    ->rows(2)
-                    ->placeholder('Catatan tambahan atau instruksi khusus...'),
+                        // Resep Obat (Optional)
+                        Forms\Components\Textarea::make('prescription')
+                            ->label('Resep Obat')
+                            ->rows(3)
+                            ->placeholder('Contoh:' . "\n" . 'Paracetamol 500mg 3x1' . "\n" . 'Amoxicillin 250mg 3x1' . "\n" . 'Vitamin C 1x1')
+                            ->columnSpanFull(),
 
-                // Hidden fields untuk keperluan sistem
+                        // Catatan Tambahan (Optional)
+                        Forms\Components\Textarea::make('additional_notes')
+                            ->label('Catatan Tambahan')
+                            ->rows(2)
+                            ->placeholder('Catatan tambahan, instruksi khusus, atau follow-up yang diperlukan...')
+                            ->columnSpanFull(),
+                    ]),
+
+                // Hidden fields
                 Forms\Components\Hidden::make('doctor_id')
                     ->default(Auth::id()),
             ]);
@@ -102,20 +139,42 @@ class MedicalRecordResource extends Resource
     {
         return $table
             ->columns([
+                // ✅ Kolom Nomor Rekam Medis
+                Tables\Columns\TextColumn::make('user.medical_record_number')
+                    ->label('No. RM')
+                    ->searchable()
+                    ->sortable()
+                    ->weight('bold')
+                    ->badge()
+                    ->color('primary')
+                    ->placeholder('Belum ada')
+                    ->copyable()
+                    ->copyMessage('Nomor RM disalin!')
+                    ->tooltip('Klik untuk copy nomor rekam medis'),
+
+                // ✅ Kolom nama pasien dengan info tambahan
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Nama Pasien')
                     ->searchable()
                     ->sortable()
                     ->weight('semibold')
-                    ->description(fn (MedicalRecord $record): string => 
-                        $record->user ? "Email: {$record->user->email}" : 'Tidak ada email'
-                    ),
-
-                Tables\Columns\TextColumn::make('user.phone')
-                    ->label('No. HP')
-                    ->searchable()
-                    ->toggleable()
-                    ->placeholder('Tidak ada'),
+                    ->description(function (MedicalRecord $record): string {
+                        $descriptions = [];
+                        
+                        if ($record->user && $record->user->phone) {
+                            $descriptions[] = "📱 {$record->user->phone}";
+                        }
+                        
+                        if ($record->user && $record->user->gender) {
+                            $descriptions[] = "⚥ {$record->user->gender_label}";
+                        }
+                        
+                        if ($record->user && $record->user->age) {
+                            $descriptions[] = "🎂 {$record->user->age} tahun";
+                        }
+                        
+                        return implode(' | ', $descriptions) ?: 'Data belum lengkap';
+                    }),
 
                 Tables\Columns\TextColumn::make('chief_complaint')
                     ->label('Keluhan Utama')
@@ -154,7 +213,6 @@ class MedicalRecordResource extends Resource
                     ->relationship('doctor', 'name')
                     ->label('Filter Dokter'),
 
-                // ✅ FILTER: Hanya tampilkan rekam medis dari user role 'user'
                 Tables\Filters\SelectFilter::make('user')
                     ->label('Filter Pasien')
                     ->options(function () {
@@ -175,6 +233,12 @@ class MedicalRecordResource extends Resource
                         now()->startOfWeek(),
                         now()->endOfWeek()
                     ])),
+
+                Tables\Filters\Filter::make('has_medical_record')
+                    ->label('Punya No. RM')
+                    ->query(fn ($query) => $query->whereHas('user', function ($q) {
+                        $q->whereNotNull('medical_record_number');
+                    })),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -192,6 +256,27 @@ class MedicalRecordResource extends Resource
                         ->color('info')
                         ->action(function (MedicalRecord $record) {
                             // Logic untuk print bisa ditambahkan di sini
+                        }),
+
+                    Tables\Actions\Action::make('view_mrn')
+                        ->label('Info Pasien')
+                        ->icon('heroicon-o-identification')
+                        ->color('primary')
+                        ->action(function (MedicalRecord $record) {
+                            $user = $record->user;
+                            $mrn = $user?->medical_record_number ?? 'Belum ada';
+                            
+                            $info = "Nama: {$user->name}\n";
+                            $info .= "No. RM: {$mrn}\n";
+                            if ($user->nomor_ktp) $info .= "NIK: {$user->nomor_ktp}\n";
+                            if ($user->phone) $info .= "HP: {$user->phone}";
+                            
+                            \Filament\Notifications\Notification::make()
+                                ->title('Informasi Pasien')
+                                ->body($info)
+                                ->success()
+                                ->duration(8000)
+                                ->send();
                         }),
                 ])
                 ->label('Aksi')
@@ -216,7 +301,6 @@ class MedicalRecordResource extends Resource
             ->searchable()
             ->striped()
             ->paginated([10, 25, 50])
-            // ✅ QUERY MODIFIER: Hanya tampilkan rekam medis dari user role 'user'
             ->modifyQueryUsing(function ($query) {
                 return $query->whereHas('user', function ($q) {
                     $q->where('role', 'user');
