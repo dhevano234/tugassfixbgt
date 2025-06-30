@@ -9,37 +9,31 @@ use App\Models\DoctorSchedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Carbon\Carbon;
 
 class AntrianController extends Controller
 {
-    /**
-     * Dashboard antrian user
-     */
     public function index(Request $request)
     {
         $user = Auth::user();
         
-        // ✅ SUDAH BENAR - tambah relationship user
         $antrianTerbaru = Queue::with(['service', 'counter', 'user'])
                               ->where('user_id', $user->id)
-                              ->latest()
+                              ->whereNotIn('status', ['canceled']) 
+                              ->latest('created_at') 
                               ->first();
 
         return view('antrian.index', compact('antrianTerbaru'));
     }
 
-    /**
-     * Form buat antrian baru
-     */
     public function create()
     {
         $user = Auth::user();
         
-        // ✅ SUDAH BENAR
+        // ✅ UBAH: Cek berdasarkan tanggal_antrian hari ini
         $existingQueue = Queue::where('user_id', $user->id)
                              ->whereIn('status', ['waiting', 'serving'])
-                             ->whereDate('created_at', today())
+                             ->whereDate('tanggal_antrian', today()) // ✅ UBAH INI
                              ->first();
 
         if ($existingQueue) {
@@ -50,7 +44,6 @@ class AntrianController extends Controller
 
         $services = Service::where('is_active', true)->get();
         
-        // ✅ PERBAIKAN: Ambil doctor schedules dengan format yang benar
         $doctors = collect();
         try {
             $doctors = DoctorSchedule::with('service')
@@ -64,55 +57,61 @@ class AntrianController extends Controller
     }
 
     /**
-     * ✅ PERBAIKAN UTAMA: Simpan antrian baru dengan doctor_id
+     * ✅ PERBAIKAN: Store dengan pisahkan tanggal antrian dan tanggal ambil
      */
     public function store(Request $request)
     {
-        // ✅ PERBAIKAN: Validasi termasuk doctor_id
         $request->validate([
             'service_id' => 'required|exists:services,id',
-            'doctor_id' => 'nullable|exists:doctor_schedules,id',  // ✅ PERBAIKAN: Validasi doctor_id
+            'doctor_id' => 'nullable|exists:doctor_schedules,id',
+            'tanggal' => 'required|date',
         ], [
             'service_id.required' => 'Layanan harus dipilih',
             'doctor_id.exists' => 'Dokter yang dipilih tidak valid',
+            'tanggal.required' => 'Tanggal antrian harus dipilih',
+            'tanggal.date' => 'Format tanggal tidak valid',
         ]);
 
         try {
             DB::beginTransaction();
 
             $user = Auth::user();
+            
+            // ✅ PERBAIKAN: Pisahkan tanggal antrian dan tanggal ambil
+            $tanggalAntrian = $request->tanggal; // Yang dipilih di date picker (misal: 2025-07-01)
+            $tanggalAmbil = now(); // Kapan user mengambil nomor (sekarang: 2025-06-30 13:10)
 
-            // ✅ SUDAH BENAR
+            // ✅ UBAH: Cek berdasarkan tanggal_antrian, bukan created_at
             $existingQueue = Queue::where('user_id', $user->id)
                                  ->whereIn('status', ['waiting', 'serving'])
-                                 ->whereDate('created_at', today())
+                                 ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ UBAH INI
                                  ->first();
 
             if ($existingQueue) {
                 DB::rollBack();
                 return back()->withErrors([
-                    'error' => 'Anda sudah memiliki antrian aktif hari ini.'
+                    'error' => 'Anda sudah memiliki antrian aktif pada tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y')
                 ])->withInput();
             }
 
-            // ✅ SUDAH BENAR
-            $queueNumber = $this->generateQueueNumber($request->service_id);
+            // ✅ UBAH: Generate nomor berdasarkan tanggal_antrian
+            $queueNumber = $this->generateQueueNumber($request->service_id, $tanggalAntrian);
 
-            // ✅ PERBAIKAN: Data antrian dengan doctor_id
-            $queueData = [
+            // ✅ UBAH: Buat antrian dengan tanggal_antrian
+            $queue = Queue::create([
                 'service_id' => $request->service_id,
                 'user_id' => $user->id,
-                'doctor_id' => $request->doctor_id,  // ✅ PERBAIKAN: Simpan doctor_id
+                'doctor_id' => $request->doctor_id,
                 'number' => $queueNumber,
                 'status' => 'waiting',
-            ];
-
-            $queue = Queue::create($queueData);
+                'tanggal_antrian' => $tanggalAntrian,  // ✅ TAMBAH INI - Tanggal yang dipilih
+                'created_at' => $tanggalAmbil,         // ✅ UBAH INI - Kapan ambil nomor
+                'updated_at' => $tanggalAmbil,
+            ]);
 
             DB::commit();
 
-            // ✅ PERBAIKAN: Message dengan info dokter jika dipilih
-            $message = 'Antrian berhasil dibuat! Nomor antrian Anda: ' . $queueNumber;
+            $message = 'Antrian berhasil dibuat untuk tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y') . '! Nomor antrian Anda: ' . $queueNumber;
             if ($request->doctor_id) {
                 $doctorSchedule = DoctorSchedule::find($request->doctor_id);
                 if ($doctorSchedule) {
@@ -130,9 +129,6 @@ class AntrianController extends Controller
         }
     }
 
-    /**
-     * Lihat detail antrian
-     */
     public function show($id)
     {
         $queue = Queue::with(['service', 'counter', 'user'])->findOrFail($id);
@@ -144,9 +140,6 @@ class AntrianController extends Controller
         return view('antrian.show', compact('queue'));
     }
 
-    /**
-     * Edit antrian - PERBAIKAN
-     */
     public function edit($id)
     {
         $queue = Queue::with(['service', 'counter', 'user'])->findOrFail($id);
@@ -162,7 +155,6 @@ class AntrianController extends Controller
 
         $services = Service::where('is_active', true)->get();
         
-        // ✅ PERBAIKAN: Ambil doctor schedules
         $doctors = collect();
         try {
             $doctors = DoctorSchedule::with('service')
@@ -175,9 +167,6 @@ class AntrianController extends Controller
         return view('antrian.edit', compact('queue', 'services', 'doctors'));
     }
 
-    /**
-     * ✅ PERBAIKAN: Update antrian dengan doctor_id
-     */
     public function update(Request $request, $id)
     {
         $queue = Queue::findOrFail($id);
@@ -191,10 +180,9 @@ class AntrianController extends Controller
                            ->withErrors(['error' => 'Antrian tidak dapat diubah karena sudah dipanggil atau selesai.']);
         }
 
-        // ✅ PERBAIKAN: Validasi termasuk doctor_id
         $request->validate([
             'service_id' => 'required|exists:services,id',
-            'doctor_id' => 'nullable|exists:doctor_schedules,id',  // ✅ PERBAIKAN: Validasi doctor_id
+            'doctor_id' => 'nullable|exists:doctor_schedules,id',
         ]);
 
         try {
@@ -202,16 +190,16 @@ class AntrianController extends Controller
 
             $updateData = [
                 'service_id' => $request->service_id,
-                'doctor_id' => $request->doctor_id,  // ✅ PERBAIKAN: Update doctor_id juga
+                'doctor_id' => $request->doctor_id,
             ];
             
-            // Generate nomor antrian baru jika service berubah
+            // ✅ UBAH: Generate nomor baru berdasarkan tanggal_antrian
             if ($queue->service_id != $request->service_id) {
-                $updateData['number'] = $this->generateQueueNumber($request->service_id);
+                $tanggalAntrian = $queue->tanggal_antrian; // ✅ UBAH INI
+                $updateData['number'] = $this->generateQueueNumber($request->service_id, $tanggalAntrian);
             }
 
             $queue->update($updateData);
-
             DB::commit();
 
             return redirect()->route('antrian.index')->with('success', 'Antrian berhasil diubah!');
@@ -222,10 +210,7 @@ class AntrianController extends Controller
         }
     }
 
-    /**
-     * Batalkan antrian - SESUAI ROUTE YANG ADA
-     */
-    public function destroy($id) // ✅ Route: DELETE /antrian/{queue}
+    public function destroy($id)
     {
         $queue = Queue::findOrFail($id);
         
@@ -253,10 +238,7 @@ class AntrianController extends Controller
         }
     }
 
-    /**
-     * Print ticket - PERBAIKAN
-     */
-    public function print($id) // ✅ Route: GET /antrian/{queue}/print
+    public function print($id)
     {
         $queue = Queue::with(['service', 'counter', 'user'])->findOrFail($id);
         
@@ -264,19 +246,26 @@ class AntrianController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        // ✅ PERBAIKAN: Gunakan nama variabel yang konsisten
         return view('antrian.print', ['antrian' => $queue]);
     }
 
     /**
-     * Generate Queue Number
+     * ✅ UBAH: Generate nomor berdasarkan tanggal_antrian
      */
-    private function generateQueueNumber($serviceId)
+    private function generateQueueNumber($serviceId, $tanggalAntrian)
     {
         $service = Service::findOrFail($serviceId);
         
+        // Pastikan format tanggal konsisten
+        if ($tanggalAntrian instanceof Carbon) {
+            $dateString = $tanggalAntrian->format('Y-m-d');
+        } else {
+            $dateString = $tanggalAntrian; // Sudah string Y-m-d
+        }
+        
+        // ✅ UBAH: Query berdasarkan tanggal_antrian, bukan created_at
         $lastQueue = Queue::where('service_id', $serviceId)
-                         ->whereDate('created_at', today())
+                         ->whereDate('tanggal_antrian', $dateString) // ✅ UBAH INI
                          ->orderBy('id', 'desc')
                          ->first();
         

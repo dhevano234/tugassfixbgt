@@ -66,6 +66,22 @@
                         <div class="detail-row">
                             <span><i class="fas fa-file-medical"></i> No. RM: {{ $antrianTerbaru->user->medical_record_number ?? 'Belum ada' }}</span>
                         </div>
+                        {{-- ✅ TAMBAHAN: Tanggal Antrian dengan styling konsisten --}}
+                        <div class="detail-row tanggal-antrian-highlight">
+                            <span class="tanggal-antrian-info">
+                                <i class="fas fa-calendar-day"></i> 
+                                <strong>Tanggal Antrian: {{ $antrianTerbaru->tanggal_antrian ? $antrianTerbaru->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}</strong>
+                            </span>
+                        </div>
+                        {{-- ✅ TAMBAHAN: Nama Dokter di bagian kiri --}}
+                        @if(isset($antrianTerbaru->doctor_name) || isset($antrianTerbaru->doctor->name))
+                        <div class="detail-row">
+                            <span class="doctor-info-left">
+                                <i class="fas fa-user-md"></i> 
+                                <strong>Dokter: {{ $antrianTerbaru->doctor_name ?? $antrianTerbaru->doctor->name ?? 'Dokter belum ditentukan' }}</strong>
+                            </span>
+                        </div>
+                        @endif
                     </div>
                 </div>
                 
@@ -80,7 +96,7 @@
                     {{-- ✅ PERBAIKAN WAKTU: Tambahkan jam ambil antrian --}}
                     <div class="time-info">
                         <div class="date-info">
-                            <small><i class="fas fa-calendar"></i> {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('d F Y') }}</small>
+                            <small><i class="fas fa-calendar"></i> Diambil: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('d F Y') }}</small>
                         </div>
                         <div class="time-detail">
                             <small><i class="fas fa-clock"></i> Jam Ambil: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
@@ -290,6 +306,37 @@
     flex-shrink: 0;
 }
 
+/* ✅ TAMBAHAN: Styling khusus untuk tanggal antrian */
+.tanggal-antrian-highlight {
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+}
+
+.tanggal-antrian-info {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%) !important;
+    color: #1976d2 !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    border-left: 4px solid #2196f3 !important;
+    font-size: 13px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15) !important;
+    border: 1px solid rgba(33, 150, 243, 0.2) !important;
+}
+
+.tanggal-antrian-info i {
+    color: #1976d2 !important;
+    font-size: 14px !important;
+    width: 16px !important;
+}
+
+.tanggal-antrian-info strong {
+    font-weight: 600;
+    color: #1976d2;
+}
+
 .antrian-meta {
     text-align: right;
     display: flex;
@@ -311,6 +358,63 @@
     border-radius: 8px;
     border-left: 3px solid #3498db;
     margin: 5px 0;
+}
+
+/* ✅ TAMBAHAN: Styling khusus untuk tanggal antrian */
+.tanggal-antrian-highlight {
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+}
+
+.tanggal-antrian-info {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%) !important;
+    color: #1976d2 !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    border-left: 4px solid #2196f3 !important;
+    font-size: 13px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15) !important;
+    border: 1px solid rgba(33, 150, 243, 0.2) !important;
+}
+
+.tanggal-antrian-info i {
+    color: #1976d2 !important;
+    font-size: 14px !important;
+    width: 16px !important;
+}
+
+.tanggal-antrian-info strong {
+    font-weight: 600;
+    color: #1976d2;
+}
+
+/* ✅ TAMBAHAN: Styling untuk nama dokter di bagian kiri */
+.doctor-info-left {
+    background: linear-gradient(135deg, #e8f5e8 0%, #f1f8e9 100%) !important;
+    color: #2e7d32 !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    border-left: 4px solid #4caf50 !important;
+    font-size: 13px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.15) !important;
+    border: 1px solid rgba(76, 175, 80, 0.2) !important;
+}
+
+.doctor-info-left i {
+    color: #2e7d32 !important;
+    font-size: 14px !important;
+    width: 16px !important;
+}
+
+.doctor-info-left strong {
+    font-weight: 600;
+    color: #2e7d32;
 }
 
 .date-info, .time-detail {
@@ -448,6 +552,25 @@
     .time-info {
         margin: 10px 0;
     }
+
+    /* ✅ Responsive untuk tanggal antrian */
+    .tanggal-antrian-info {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 4px !important;
+    }
+
+    .date-antrian-meta {
+        text-align: left;
+    }
+
+    /* ✅ Responsive untuk tanggal antrian dan dokter */
+    .tanggal-antrian-info,
+    .doctor-info-left {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 4px !important;
+    }
 }
 
 /* ============================================================================ */
@@ -465,6 +588,19 @@
 .animate:nth-child(1) { animation-delay: 0.1s; }
 .animate:nth-child(2) { animation-delay: 0.2s; }
 .animate:nth-child(3) { animation-delay: 0.3s; }
+
+/* ✅ TAMBAHAN: Animasi hover untuk elemen interaktif */
+.tanggal-antrian-info:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.25) !important;
+    transition: all 0.3s ease;
+}
+
+.doctor-info-left:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.25) !important;
+    transition: all 0.3s ease;
+}
 </style>
 
 <script>

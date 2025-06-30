@@ -202,6 +202,66 @@
             </div>
         </form>
     </div>
+
+    {{-- ✅ PERBAIKAN: Info Card dengan 2 Tanggal Terpisah --}}
+    @if(isset($antrianTerbaru) && $antrianTerbaru)
+        <div class="info-card mt-4">
+            <h6 class="info-title">
+                <i class="fas fa-info-circle"></i>
+                Antrian Terakhir Anda
+            </h6>
+            <div class="antrian-info">
+                <div class="antrian-number">
+                    <span class="number">{{ $antrianTerbaru->number ?? 'N/A' }}</span>
+                    <span class="status status-{{ strtolower($antrianTerbaru->status ?? 'pending') }}">
+                        {{ ucfirst($antrianTerbaru->status ?? 'Pending') }}
+                    </span>
+                </div>
+                
+                {{-- ✅ PERBAIKAN: Tampilkan 2 Tanggal Terpisah --}}
+                <div class="time-info">
+                    {{-- Tanggal Antrian (yang dipilih di date picker) --}}
+                    <div class="date-info main-date">
+                        <small><i class="fas fa-calendar-day"></i> 
+                            <strong>Tanggal Antrian:</strong> 
+                            {{ $antrianTerbaru->tanggal_antrian ? $antrianTerbaru->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}
+                        </small>
+                    </div>
+                    
+                    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #dee2e6;">
+                    
+                    {{-- Timeline pengambilan nomor --}}
+                    <div class="time-detail">
+                        <small><i class="fas fa-calendar"></i> Tanggal Ambil: 
+                            {{ $antrianTerbaru->created_at ? $antrianTerbaru->created_at->format('d F Y') : 'Tidak diketahui' }}
+                        </small>
+                    </div>
+                    
+                    <div class="time-detail">
+                        <small><i class="fas fa-clock"></i> Jam Ambil: 
+                            {{ $antrianTerbaru->created_at ? $antrianTerbaru->created_at->format('H:i') : '00:00' }} WIB
+                        </small>
+                    </div>
+                    
+                    @if($antrianTerbaru->called_at)
+                        <div class="time-detail">
+                            <small><i class="fas fa-bell"></i> Dipanggil: 
+                                {{ $antrianTerbaru->called_at->format('H:i') }} WIB
+                            </small>
+                        </div>
+                    @endif
+                    
+                    @if($antrianTerbaru->finished_at)
+                        <div class="time-detail">
+                            <small><i class="fas fa-check-circle"></i> Selesai: 
+                                {{ $antrianTerbaru->finished_at->format('H:i') }} WIB
+                            </small>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    @endif
 </main>
 
 <style>
@@ -390,43 +450,154 @@
     font-size: 16px;
 }
 
+/* Info Card Styles untuk antrian terbaru */
+.info-card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+    border-left: 5px solid #3498db;
+}
+
+.info-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.info-title i {
+    color: #3498db;
+}
+
+.antrian-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.antrian-number {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.antrian-number .number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2c3e50;
+    background: #ecf0f1;
+    padding: 10px 20px;
+    border-radius: 10px;
+    min-width: 80px;
+    text-align: center;
+}
+
+.status {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-pending {
+    background: #fef3cd;
+    color: #856404;
+}
+
+.status-waiting {
+    background: #fef3cd;
+    color: #856404;
+}
+
+.status-called {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.status-finished {
+    background: #d4edda;
+    color: #155724;
+}
+
+.time-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    text-align: right;
+}
+
+.time-detail {
+    color: #6c757d;
+}
+
+.time-detail i {
+    width: 12px;
+    margin-right: 5px;
+}
+
+/* ✅ TAMBAHAN: Style untuk tanggal antrian */
+.main-date {
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid #3498db;
+    margin-bottom: 8px;
+}
+
+.main-date strong {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
 /* Date Picker Styles */
 .tanggal-antrian-picker {
-    display: flex;
+    display: flex !important;
     flex-wrap: wrap;
     gap: 10px;
-    padding: 10px;
+    padding: 15px;
     border: 2px solid #ecf0f1;
     border-radius: 8px;
     background: white;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    min-height: 80px;
 }
 
 .date-option {
-    padding: 10px 15px;
+    padding: 12px 16px;
     border: 1px solid #dee2e6;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     background-color: #f8f9fa;
     color: #34495e;
     font-size: 14px;
     text-align: center;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
     flex: 1 1 auto;
-    min-width: 80px;
+    min-width: 90px;
+    font-weight: 500;
 }
 
 .date-option:hover {
     background-color: #e9ecef;
-    border-color: #ced4da;
+    border-color: #3498db;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
 .date-option.selected {
     background-color: #3498db;
     color: white;
-    border-color: #3498db;
+    border-color: #2980b9;
     font-weight: 600;
-    box-shadow: 0 2px 5px rgba(52, 152, 219, 0.2);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    transform: translateY(-2px);
 }
 
 .date-option.disabled {
@@ -666,6 +837,16 @@
         grid-column: span 1;
     }
 
+    .antrian-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .time-info {
+        text-align: left;
+        width: 100%;
+    }
+
     .custom-dropdown .dropdown-menu {
         max-height: 250px;
         position: absolute;
@@ -747,7 +928,7 @@ document.addEventListener('DOMContentLoaded', function() {
         form.addEventListener('submit', function(e) {
             // Validasi service_id wajib diisi
             const serviceIdInput = document.getElementById('service_id');
-            if (!serviceIdInput.value) {
+            if (!serviceIdInput || !serviceIdInput.value) {
                 e.preventDefault();
                 alert('Harap pilih layanan terlebih dahulu!');
                 return;
@@ -755,24 +936,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Validasi tanggal wajib diisi
             const tanggalInput = document.getElementById('tanggal');
-            if (!tanggalInput.value) {
+            if (!tanggalInput || !tanggalInput.value) {
                 e.preventDefault();
                 alert('Harap pilih tanggal antrian!');
+                
+                // Re-render date picker jika error
+                renderDateOptions();
                 return;
             }
 
             // Validasi doctor_id wajib diisi
             const doctorIdInput = document.getElementById('doctor_id');
-            if (!doctorIdInput.value) {
+            if (!doctorIdInput || !doctorIdInput.value) {
                 e.preventDefault();
                 alert('Harap pilih dokter terlebih dahulu!');
                 return;
             }
 
             // Disable submit button untuk prevent double submission
-            submitBtn.disabled = true;
-            submitBtn.classList.add('btn-loading');
-            submitBtn.innerHTML = '<i class="fas fa-spinner"></i> Memproses...';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('btn-loading');
+                submitBtn.innerHTML = '<i class="fas fa-spinner"></i> Memproses...';
+            }
         });
     }
 
@@ -810,8 +996,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     selectOption(selectedOption, dropdown);
                 }
             }
-
-            // Set initial state - jangan ubah tampilan visual
 
             // Trigger click
             trigger.addEventListener('click', function(e) {
@@ -962,10 +1146,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- Custom Date Picker Logic ---
+    // --- Custom Date Picker Logic dengan Auto-refresh ---
     const tanggalAntrianPicker = document.getElementById('tanggal-antrian-picker');
     const hiddenTanggalInput = document.getElementById('tanggal');
-    const today = new Date();
+
+    function getCurrentDate() {
+        return new Date();
+    }
 
     function formatDateForInput(date) {
         const year = date.getFullYear();
@@ -980,7 +1167,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderDateOptions() {
+        if (!tanggalAntrianPicker) {
+            console.error('Date picker element not found!');
+            return;
+        }
+
+        const today = getCurrentDate();
         tanggalAntrianPicker.innerHTML = '';
+        
         for (let i = 0; i < 7; i++) {
             const date = new Date(today);
             date.setDate(today.getDate() + i);
@@ -993,11 +1187,16 @@ document.addEventListener('DOMContentLoaded', function() {
             dateOption.setAttribute('data-date', dateString);
             dateOption.textContent = displayString;
 
-            if (hiddenTanggalInput.value === dateString) {
+            if (i === 0) {
+                dateOption.style.borderColor = '#3498db';
+                dateOption.style.fontWeight = '600';
+            }
+
+            if (hiddenTanggalInput && hiddenTanggalInput.value === dateString) {
                 dateOption.classList.add('selected');
-            } else if (!hiddenTanggalInput.value && i === 0) {
+            } else if ((!hiddenTanggalInput || !hiddenTanggalInput.value) && i === 0) {
                 dateOption.classList.add('selected');
-                hiddenTanggalInput.value = dateString;
+                if (hiddenTanggalInput) hiddenTanggalInput.value = dateString;
             }
 
             dateOption.addEventListener('click', function() {
@@ -1005,24 +1204,80 @@ document.addEventListener('DOMContentLoaded', function() {
                     option.classList.remove('selected');
                 });
                 this.classList.add('selected');
-                hiddenTanggalInput.value = this.getAttribute('data-date');
+                if (hiddenTanggalInput) hiddenTanggalInput.value = this.getAttribute('data-date');
+                
+                console.log('Date selected:', this.getAttribute('data-date'));
             });
+            
             tanggalAntrianPicker.appendChild(dateOption);
         }
     }
+
+    function refreshDatePickerIfNeeded() {
+        if (!tanggalAntrianPicker || !hiddenTanggalInput) return;
+        
+        const today = getCurrentDate();
+        const todayString = formatDateForInput(today);
+        
+        const todayOption = tanggalAntrianPicker.querySelector(`[data-date="${todayString}"]`);
+        
+        if (!todayOption) {
+            console.log('Today option not found, refreshing date picker...');
+            renderDateOptions();
+        }
+    }
+
+    // Event listeners untuk auto-refresh
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            setTimeout(refreshDatePickerIfNeeded, 100);
+        }
+    });
+
+    window.addEventListener('focus', function() {
+        setTimeout(refreshDatePickerIfNeeded, 100);
+    });
+
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            setTimeout(renderDateOptions, 100);
+        }
+    });
+
+    setInterval(function() {
+        refreshDatePickerIfNeeded();
+    }, 60000);
 
     // Initial render of date options
     renderDateOptions();
 
     // Re-select the old value if it exists after rendering options
-    if (hiddenTanggalInput.value) {
-        const previouslySelected = tanggalAntrianPicker.querySelector(`[data-date="${hiddenTanggalInput.value}"]`);
-        if (previouslySelected) {
-            tanggalAntrianPicker.querySelectorAll('.date-option').forEach(option => {
-                option.classList.remove('selected');
-            });
-            previouslySelected.classList.add('selected');
-        }
+    if (hiddenTanggalInput && hiddenTanggalInput.value) {
+        setTimeout(() => {
+            const previouslySelected = tanggalAntrianPicker.querySelector(`[data-date="${hiddenTanggalInput.value}"]`);
+            if (previouslySelected) {
+                tanggalAntrianPicker.querySelectorAll('.date-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                previouslySelected.classList.add('selected');
+            } else {
+                renderDateOptions();
+            }
+        }, 100);
+    }
+
+    // Validasi real-time untuk tanggal
+    if (hiddenTanggalInput) {
+        hiddenTanggalInput.addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            const today = getCurrentDate();
+            today.setHours(0, 0, 0, 0);
+            
+            if (selectedDate < today) {
+                this.value = formatDateForInput(today);
+                renderDateOptions();
+            }
+        });
     }
 });
 </script>

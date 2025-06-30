@@ -18,6 +18,7 @@ class Queue extends Model
         'doctor_id',  // ✅ TAMBAH doctor_id ke fillable
         'number',
         'status',
+        'tanggal_antrian',
         'called_at',
         'served_at',
         'canceled_at',
@@ -25,10 +26,13 @@ class Queue extends Model
     ];
 
     protected $casts = [
+        'tanggal_antrian' => 'date',
         'called_at' => 'datetime',
         'served_at' => 'datetime', 
         'canceled_at' => 'datetime',
         'finished_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     // ✅ RELATIONSHIP YANG BENAR

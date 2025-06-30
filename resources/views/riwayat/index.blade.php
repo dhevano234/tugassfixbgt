@@ -115,9 +115,34 @@
                                     </div>
                                 </td>
                                 <td>
+                                    {{-- ✅ PERBAIKAN UTAMA: Tanggal & Waktu dengan 2 informasi terpisah --}}
                                     <div class="datetime-info">
-                                        <div class="date">{{ $antrian->formatted_tanggal }}</div>
-                                        <div class="time">{{ $antrian->created_at->format('H:i') }} WIB</div>
+                                        {{-- Tanggal Antrian (yang dipilih user) --}}
+                                        <div class="date main-date">
+                                            <i class="fas fa-calendar-day"></i>
+                                            {{ $antrian->tanggal_antrian ? $antrian->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}
+                                        </div>
+                                        
+                                        {{-- Tanggal & Jam Ambil (kapan user mengambil nomor) --}}
+                                        <div class="time pickup-time">
+                                            <i class="fas fa-clock"></i>
+                                            Diambil: {{ $antrian->created_at ? $antrian->created_at->format('d/m/Y H:i') : '-' }}
+                                        </div>
+                                        
+                                        {{-- Timeline Status (jika ada) --}}
+                                        @if($antrian->called_at)
+                                            <div class="time called-time">
+                                                <i class="fas fa-bell"></i>
+                                                Dipanggil: {{ $antrian->called_at->format('H:i') }}
+                                            </div>
+                                        @endif
+                                        
+                                        @if($antrian->finished_at)
+                                            <div class="time finished-time">
+                                                <i class="fas fa-check"></i>
+                                                Selesai: {{ $antrian->finished_at->format('H:i') }}
+                                            </div>
+                                        @endif
                                     </div>
                                 </td>
                                 <td>
@@ -141,7 +166,6 @@
                                     </span>
                                 </td>
                                 <td>
-                                    {{-- ✅ PERBAIKAN UTAMA: Kolom Dokter --}}
                                     <div class="doctor-info">
                                         @if($antrian->doctor_name)
                                             <div class="doctor-name-main">
@@ -162,16 +186,6 @@
                                                 <i class="fas fa-user-md opacity-50"></i>
                                                 Belum ditentukan
                                             </span>
-                                            {{-- Debug info untuk development --}}
-                                            @if(config('app.debug', false))
-                                                <div class="debug-info">
-                                                    <small class="text-danger">
-                                                        Debug: doctor_id={{ $antrian->doctor_id ?? 'null' }}
-                                                        | Schedule={{ $antrian->doctorSchedule ? 'ada' : 'null' }}
-                                                        | Medical={{ $antrian->medicalRecord ? 'ada' : 'null' }}
-                                                    </small>
-                                                </div>
-                                            @endif
                                         @endif
                                     </div>
                                 </td>
@@ -221,28 +235,49 @@
                                     <i class="fas fa-hospital"></i>
                                     <span>{{ $antrian->poli ?? $antrian->service->name ?? '-' }}</span>
                                 </div>
-                                <div class="info-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <span>{{ $antrian->formatted_tanggal }}</span>
+                                
+                                {{-- ✅ PERBAIKAN UTAMA: Info Tanggal di Mobile --}}
+                                <div class="info-item main-date-mobile">
+                                    <i class="fas fa-calendar-day"></i>
+                                    <span>
+                                        <strong>Tanggal Antrian:</strong><br>
+                                        {{ $antrian->tanggal_antrian ? $antrian->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}
+                                    </span>
                                 </div>
-                                {{-- ✅ PERBAIKAN UTAMA: Info Dokter di Mobile --}}
+                                
+                                <div class="info-item">
+                                    <i class="fas fa-clock"></i>
+                                    <span>
+                                        Diambil: {{ $antrian->created_at ? $antrian->created_at->format('d/m/Y H:i') : '-' }}
+                                    </span>
+                                </div>
+                                
+                                {{-- Timeline Status Mobile --}}
+                                @if($antrian->called_at)
+                                    <div class="info-item">
+                                        <i class="fas fa-bell"></i>
+                                        <span>Dipanggil: {{ $antrian->called_at->format('H:i') }} WIB</span>
+                                    </div>
+                                @endif
+                                
+                                @if($antrian->finished_at)
+                                    <div class="info-item">
+                                        <i class="fas fa-check"></i>
+                                        <span>Selesai: {{ $antrian->finished_at->format('H:i') }} WIB</span>
+                                    </div>
+                                @endif
+                                
                                 <div class="info-item">
                                     <i class="fas fa-user-md"></i>
                                     <span>
                                         @if($antrian->doctor_name)
                                             {{ $antrian->doctor_name }}
-                                            @if(config('app.debug', false))
-                                                @if($antrian->doctorSchedule)
-                                                    <small class="badge badge-info">✓</small>
-                                                @elseif($antrian->medicalRecord && $antrian->medicalRecord->doctor)
-                                                    <small class="badge badge-success">↳</small>
-                                                @endif
-                                            @endif
                                         @else
                                             <span class="text-muted">Belum ditentukan</span>
                                         @endif
                                     </span>
                                 </div>
+                                
                                 @if($antrian->medicalRecord)
                                     <div class="info-item medical-info">
                                         <i class="fas fa-notes-medical"></i>
@@ -575,20 +610,52 @@
     display: inline-block;
 }
 
+/* ✅ PERBAIKAN: Styling datetime-info dengan 2 tanggal */
 .datetime-info {
-    min-width: 120px;
+    min-width: 180px;
+    max-width: 220px;
 }
 
-.datetime-info .date {
+.datetime-info .date.main-date {
+    background: #e3f2fd;
+    color: #1976d2;
+    padding: 6px 10px;
+    border-radius: 12px;
     font-weight: 600;
-    color: #2c3e50;
-    margin-bottom: 4px;
-    font-size: 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-left: 3px solid #2196f3;
 }
 
 .datetime-info .time {
     color: #6c757d;
-    font-size: 13px;
+    font-size: 12px;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 4px;
+}
+
+.datetime-info .time.pickup-time {
+    font-weight: 500;
+    color: #495057;
+}
+
+.datetime-info .time.called-time {
+    color: #856404;
+}
+
+.datetime-info .time.finished-time {
+    color: #155724;
+}
+
+.datetime-info .time i {
+    width: 12px;
+    font-size: 10px;
 }
 
 .status-badge {
@@ -628,7 +695,7 @@
     border: 1px solid #dc3545;
 }
 
-/* ✅ PERBAIKAN: Styling untuk info dokter yang lebih baik */
+/* Styling untuk info dokter */
 .doctor-info {
     max-width: 180px;
     font-size: 14px;
@@ -662,13 +729,6 @@
     background: #d4edda;
     color: #155724;
     border: 1px solid #c3e6cb;
-}
-
-.debug-info {
-    margin-top: 6px;
-    font-size: 10px;
-    line-height: 1.2;
-    word-break: break-all;
 }
 
 .text-muted {
@@ -743,6 +803,20 @@
     color: #495057;
     font-size: 14px;
     flex: 1;
+}
+
+/* ✅ PERBAIKAN: Styling khusus untuk tanggal antrian di mobile */
+.info-item.main-date-mobile {
+    background: #e3f2fd;
+    padding: 12px;
+    border-radius: 8px;
+    border-bottom: none;
+    border-left: 4px solid #2196f3;
+}
+
+.info-item.main-date-mobile span {
+    color: #1976d2;
+    font-weight: 500;
 }
 
 .info-item.medical-info {
@@ -830,6 +904,127 @@
         text-align: center;
     }
 
+    .filter-options {
+        width: 100%;
+    }
+
+    .filter-chip {
+        flex: 1;
+        justify-content: center;
+        min-width: 100px;
+        font-size: 13px;
+        padding: 10px 15px;
+    }
+
+    .card-header {
+        padding: 15px 20px;
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+
+    .desktop-table {
+        display: none;
+    }
+
+    .mobile-cards {
+        display: flex;
+    }
+
+    .pagination-container {
+        padding: 15px 20px;
+    }
+
+    .empty-state {
+        padding: 40px 20px;
+    }
+
+    .empty-icon {
+        font-size: 3rem;
+    }
+
+    .empty-state h3 {
+        font-size: 1.3rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .filter-chip {
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+
+    .mobile-card-header {
+        padding: 12px 15px;
+    }
+
+    .mobile-card-body {
+        padding: 15px;
+    }
+
+    .info-item {
+        padding: 6px 0;
+    }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Close alert functionality
+    document.querySelectorAll('.alert-close').forEach(button => {
+        button.addEventListener('click', function() {
+            this.parentElement.style.display = 'none';
+        });
+    });
+
+    // Auto hide alerts after 5 seconds
+    document.querySelectorAll('.alert').forEach(alert => {
+        setTimeout(() => {
+            alert.style.opacity = '0';
+            setTimeout(() => alert.remove(), 500);
+        }, 5000);
+    });
+
+    // Responsive table handling
+    function handleResponsiveTable() {
+        const table = document.querySelector('.desktop-table');
+        const mobileCards = document.querySelector('.mobile-cards');
+        
+        if (window.innerWidth <= 768) {
+            if (table) table.style.display = 'none';
+            if (mobileCards) mobileCards.style.display = 'flex';
+        } else {
+            if (table) table.style.display = 'block';
+            if (mobileCards) mobileCards.style.display = 'none';
+        }
+    }
+
+    // Initial responsive check
+    handleResponsiveTable();
+    
+    // Handle window resize
+    window.addEventListener('resize', handleResponsiveTable);
+});
+</script>
+    <style>
+
+    @media (max-width: 768px) {
+    .main-content {
+        padding: 20px 15px;
+    }
+
+    .page-header {
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .page-header h1 {
+        font-size: 1.5rem;
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+
     .filter-card {
         padding: 20px;
         margin-bottom: 20px;
@@ -883,9 +1078,9 @@
     .empty-state h3 {
         font-size: 1.3rem;
     }
-}
+    }
 
-@media (max-width: 480px) {
+    @media (max-width: 480px) {
     .filter-chip {
         font-size: 12px;
         padding: 8px 12px;
