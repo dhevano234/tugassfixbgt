@@ -143,6 +143,45 @@
         .print-container {
             animation: fadeIn 0.5s ease-out;
         }
+
+        /* ✅ Styling khusus untuk keluhan di tiket print */
+        .complaint-row {
+            border-top: 2px solid #007bff !important;
+            margin-top: 8px !important;
+            padding-top: 8px !important;
+            background: rgba(0, 123, 255, 0.05);
+        }
+
+        .complaint-text {
+            font-style: italic !important;
+            color: #0056b3 !important;
+            font-weight: 600 !important;
+            line-height: 1.3 !important;
+            text-align: left !important;
+            display: block !important;
+            margin-top: 4px !important;
+        }
+
+        /* Print specific styles */
+        @media print {
+            .complaint-row {
+                border-top: 2px solid #000 !important;
+                background: none !important;
+            }
+            
+            .complaint-text {
+                color: #000 !important;
+            }
+        }
+
+        /* Screen specific styles */
+        @media screen {
+            .complaint-row {
+                border-radius: 4px;
+                padding: 12px 8px;
+                margin: 8px -8px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -214,6 +253,16 @@
                     @endswitch
                 </span>
             </div>
+
+            {{-- ✅ TAMBAH INFO KELUHAN JIKA ADA --}}
+            @if(!empty($antrian->chief_complaint))
+            <div class="info-row complaint-row">
+                <span class="info-label">Keluhan:</span>
+                <span class="info-value complaint-text">
+                    "{{ $antrian->chief_complaint }}"
+                </span>
+            </div>
+            @endif
         </div>
 
         {{-- Footer Tiket --}}

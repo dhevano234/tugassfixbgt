@@ -40,6 +40,7 @@
         <form action="{{ route('antrian.store') }}" method="POST" id="antrianForm">
             @csrf
             
+            {{-- SECTION 1: Informasi Personal --}}
             <div class="form-section">
                 <h6 class="form-section-title">
                     <i class="fas fa-user"></i>
@@ -97,6 +98,7 @@
                 </div>
             </div>
 
+            {{-- SECTION 2: Informasi Layanan --}}
             <div class="form-section">
                 <h6 class="form-section-title">
                     <i class="fas fa-stethoscope"></i>
@@ -190,6 +192,49 @@
                 </div>
             </div>
 
+            {{-- SECTION 3: Keluhan Utama (OPSIONAL) --}}
+            <div class="form-section">
+                <h6 class="form-section-title">
+                    <i class="fas fa-comment-medical"></i>
+                    Keluhan Utama (Opsional)
+                </h6>
+                
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label for="chief_complaint" class="form-label">
+                            Keluhan/Gejala yang Dialami 
+                            <span class="optional">(Opsional)</span>
+                        </label>
+                        <textarea name="chief_complaint" 
+                                  id="chief_complaint" 
+                                  class="form-textarea @error('chief_complaint') is-invalid @enderror"
+                                  rows="4"
+                                  maxlength="1000"
+                                  placeholder="Contoh: Demam sejak 2 hari, sakit kepala, batuk berdahak, nyeri perut, dll.&#10;&#10;Jika diisi, keluhan ini akan otomatis muncul saat dokter membuat rekam medis Anda.">{{ old('chief_complaint') }}</textarea>
+                        
+                        <div class="form-helper">
+                            <i class="fas fa-info-circle"></i>
+                            <span>
+                                <strong>Opsional:</strong> Anda boleh mengosongkan field ini. 
+                                Jika diisi, keluhan akan otomatis muncul di rekam medis dokter.
+                            </span>
+                        </div>
+                        
+                        {{-- Character counter --}}
+                        <div class="character-counter">
+                            <small class="text-muted">
+                                <span id="char-count">0</span>/1000 karakter
+                            </small>
+                        </div>
+                        
+                        @error('chief_complaint')
+                            <div class="form-error">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+            </div>
+
+            {{-- Form Actions --}}
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
                     <i class="fas fa-plus-circle"></i>
@@ -203,7 +248,7 @@
         </form>
     </div>
 
-    {{-- ✅ PERBAIKAN: Info Card dengan 2 Tanggal Terpisah --}}
+    {{-- Info Card: Antrian Terakhir --}}
     @if(isset($antrianTerbaru) && $antrianTerbaru)
         <div class="info-card mt-4">
             <h6 class="info-title">
@@ -218,7 +263,6 @@
                     </span>
                 </div>
                 
-                {{-- ✅ PERBAIKAN: Tampilkan 2 Tanggal Terpisah --}}
                 <div class="time-info">
                     {{-- Tanggal Antrian (yang dipilih di date picker) --}}
                     <div class="date-info main-date">
@@ -368,6 +412,11 @@
     flex-direction: column;
 }
 
+/* Full width form group */
+.form-group.full-width {
+    grid-column: 1 / -1;
+}
+
 .form-label {
     font-weight: 500;
     color: #2c3e50;
@@ -384,6 +433,7 @@
     color: #7f8c8d;
     font-weight: normal;
     font-size: 12px;
+    font-style: italic;
 }
 
 .form-input,
@@ -412,6 +462,34 @@
     pointer-events: none;
 }
 
+/* Form textarea styling */
+.form-textarea {
+    padding: 12px 15px;
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+    background: white;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.form-textarea.is-invalid {
+    border-color: #e74c3c;
+}
+
+.form-textarea::placeholder {
+    color: #95a5a6;
+    line-height: 1.4;
+}
+
 .form-error {
     color: #e74c3c;
     font-size: 12px;
@@ -421,10 +499,20 @@
 .form-helper {
     font-size: 12px;
     color: #7f8c8d;
-    margin-top: 5px;
+    margin-top: 8px;
     display: flex;
-    align-items: center;
-    gap: 5px;
+    align-items: flex-start;
+    gap: 6px;
+    line-height: 1.4;
+}
+
+.form-helper i {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.form-helper strong {
+    color: #2c3e50;
 }
 
 .form-helper a {
@@ -434,6 +522,17 @@
 
 .form-helper a:hover {
     text-decoration: underline;
+}
+
+/* Character counter */
+.character-counter {
+    text-align: right;
+    margin-top: 5px;
+}
+
+.character-counter small {
+    font-size: 11px;
+    color: #7f8c8d;
 }
 
 .form-actions {
@@ -542,7 +641,7 @@
     margin-right: 5px;
 }
 
-/* ✅ TAMBAHAN: Style untuk tanggal antrian */
+/* Style untuk tanggal antrian */
 .main-date {
     background: #f8f9fa;
     padding: 8px 12px;
@@ -895,6 +994,15 @@
     .custom-dropdown .doctor-day {
         font-size: 13px;
     }
+
+    .form-textarea {
+        min-height: 120px;
+        font-size: 16px; /* Prevent zoom on iOS */
+    }
+    
+    .form-helper {
+        font-size: 11px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -922,6 +1030,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize Custom Dropdowns
     initCustomDropdowns();
+
+    // Initialize character counter for chief_complaint
+    initCharacterCounter();
 
     // Form validation and submission
     if (form) {
@@ -953,11 +1064,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            // Validasi chief_complaint length
+            const chiefComplaintTextarea = document.getElementById('chief_complaint');
+            const chiefComplaint = chiefComplaintTextarea?.value?.trim();
+            
+            if (chiefComplaint && chiefComplaint.length > 1000) {
+                e.preventDefault();
+                alert('Keluhan terlalu panjang! Maksimal 1000 karakter.');
+                chiefComplaintTextarea.focus();
+                return false;
+            }
+
             // Disable submit button untuk prevent double submission
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.classList.add('btn-loading');
                 submitBtn.innerHTML = '<i class="fas fa-spinner"></i> Memproses...';
+            }
+
+            // Log untuk debugging
+            if (chiefComplaint) {
+                console.log('Keluhan akan disimpan:', chiefComplaint.substring(0, 100) + '...');
             }
         });
     }
@@ -968,6 +1095,37 @@ document.addEventListener('DOMContentLoaded', function() {
             this.parentElement.style.display = 'none';
         });
     });
+
+    function initCharacterCounter() {
+        const chiefComplaintTextarea = document.getElementById('chief_complaint');
+        const charCountElement = document.getElementById('char-count');
+        
+        if (chiefComplaintTextarea && charCountElement) {
+            // Update counter on input
+            chiefComplaintTextarea.addEventListener('input', function() {
+                const currentLength = this.value.length;
+                charCountElement.textContent = currentLength;
+                
+                // Change color based on length
+                if (currentLength > 900) {
+                    charCountElement.style.color = '#e74c3c'; // Red when approaching limit
+                } else if (currentLength > 700) {
+                    charCountElement.style.color = '#f39c12'; // Orange when getting long
+                } else {
+                    charCountElement.style.color = '#7f8c8d'; // Default gray
+                }
+            });
+            
+            // Initial count
+            chiefComplaintTextarea.dispatchEvent(new Event('input'));
+            
+            // Auto-resize textarea (optional enhancement)
+            chiefComplaintTextarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            });
+        }
+    }
 
     function initCustomDropdowns() {
         const dropdowns = document.querySelectorAll('.custom-dropdown');

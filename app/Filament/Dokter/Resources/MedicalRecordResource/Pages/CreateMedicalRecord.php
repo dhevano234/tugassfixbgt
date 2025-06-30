@@ -64,26 +64,62 @@ class CreateMedicalRecord extends CreateRecord
             
             // ✅ VALIDASI: Pastikan user ada dan role-nya 'user'
             if ($user && $user->role === 'user') {
-                // Auto-populate user field dan nomor RM
-                $this->form->fill([
+                // ✅ CARI KELUHAN DARI ANTRIAN TERBARU
+                $queueWithComplaint = Queue::where('user_id', $userId)
+                    ->whereNotNull('chief_complaint')
+                    ->where('chief_complaint', '!=', '')
+                    ->latest('created_at')
+                    ->first();
+                
+                // Auto-populate user field, nomor RM, dan keluhan
+                $formData = [
                     'user_id' => $userId,
                     'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
-                ]);
+                ];
                 
-                // Show notification dengan info user
+                // ✅ AUTO-FILL KELUHAN JIKA ADA
+                if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
+                    $formData['chief_complaint'] = $queueWithComplaint->chief_complaint;
+                }
+                
+                $this->form->fill($formData);
+                
+                // ✅ ENHANCED NOTIFICATION dengan info keluhan
+                $notificationBody = "Auto-selected: {$user->name}";
+                
+                if ($user->medical_record_number) {
+                    $notificationBody .= " | No. RM: {$user->medical_record_number}";
+                } else {
+                    $notificationBody .= " | Belum ada No. RM";
+                }
+                
+                if ($queueNumber) {
+                    $notificationBody .= " (Antrian: {$queueNumber})";
+                }
+                
+                // ✅ TAMBAH INFO KELUHAN
+                if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
+                    $complainLimit = 60;
+                    $shortComplaint = strlen($queueWithComplaint->chief_complaint) > $complainLimit 
+                        ? substr($queueWithComplaint->chief_complaint, 0, $complainLimit) . '...'
+                        : $queueWithComplaint->chief_complaint;
+                    $notificationBody .= "\n📝 Keluhan dari antrian: \"{$shortComplaint}\"";
+                } else {
+                    $notificationBody .= "\n💬 Pasien tidak mengisi keluhan saat ambil antrian";
+                }
+                
                 Notification::make()
                     ->title('Pasien Dari Antrian')
-                    ->body("Auto-selected: {$user->name}" . 
-                           ($user->medical_record_number ? " | No. RM: {$user->medical_record_number}" : " | Belum ada No. RM") .
-                           ($queueNumber ? " (Antrian: {$queueNumber})" : ""))
+                    ->body($notificationBody)
                     ->success()
-                    ->duration(5000)
+                    ->duration(8000) // Lebih lama karena ada info keluhan
                     ->send();
                     
                 // Update page title jika ada queue number
                 if ($queueNumber) {
                     static::$title = "Rekam Medis - Antrian {$queueNumber}";
                 }
+                
             } elseif ($user && $user->role !== 'user') {
                 // ✅ WARNING: Jika user bukan role 'user'
                 Notification::make()
@@ -99,6 +135,45 @@ class CreateMedicalRecord extends CreateRecord
                     ->body("User dengan ID {$userId} tidak ditemukan.")
                     ->danger()
                     ->duration(5000)
+                    ->send();
+            }
+        } elseif ($queueNumber) {
+            // ✅ HANDLE BERDASARKAN QUEUE NUMBER SAJA
+            $queue = Queue::where('number', $queueNumber)
+                ->whereDate('created_at', today())
+                ->with('user')
+                ->first();
+                
+            if ($queue && $queue->user) {
+                $user = $queue->user;
+                
+                $formData = [
+                    'user_id' => $user->id,
+                    'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
+                ];
+                
+                // ✅ AUTO-FILL KELUHAN dari queue ini
+                if ($queue->chief_complaint) {
+                    $formData['chief_complaint'] = $queue->chief_complaint;
+                }
+                
+                $this->form->fill($formData);
+                
+                $notificationBody = "Antrian {$queueNumber}: {$user->name}";
+                if ($queue->chief_complaint) {
+                    $shortComplaint = strlen($queue->chief_complaint) > 60 
+                        ? substr($queue->chief_complaint, 0, 60) . '...'
+                        : $queue->chief_complaint;
+                    $notificationBody .= "\n📝 Keluhan: \"{$shortComplaint}\"";
+                } else {
+                    $notificationBody .= "\n💬 Tidak ada keluhan dari antrian";
+                }
+                
+                Notification::make()
+                    ->title('Data dari Antrian')
+                    ->body($notificationBody)
+                    ->success()
+                    ->duration(8000)
                     ->send();
             }
         }

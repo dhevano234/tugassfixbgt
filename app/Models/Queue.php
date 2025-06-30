@@ -1,6 +1,6 @@
 <?php
 // File: app/Models/Queue.php
-// PERBAIKAN LENGKAP untuk Queue Model dengan relationship dokter yang benar + TIMEZONE FIX
+// PERBAIKAN LENGKAP untuk Queue Model dengan chief_complaint support
 
 namespace App\Models;
 
@@ -15,10 +15,11 @@ class Queue extends Model
         'counter_id',
         'service_id',
         'user_id',
-        'doctor_id',  // ✅ TAMBAH doctor_id ke fillable
+        'doctor_id',
         'number',
         'status',
         'tanggal_antrian',
+        'chief_complaint', // ✅ TAMBAH INI - untuk keluhan dari antrian
         'called_at',
         'served_at',
         'canceled_at',
@@ -80,6 +81,40 @@ class Queue extends Model
         }
         
         return null;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Check apakah ada keluhan dari antrian
+     */
+    public function hasChiefComplaint(): bool
+    {
+        return !empty($this->chief_complaint);
+    }
+
+    /**
+     * ✅ TAMBAHAN: Get keluhan yang sudah diformat
+     */
+    public function getFormattedChiefComplaintAttribute(): ?string
+    {
+        if (empty($this->chief_complaint)) {
+            return null;
+        }
+        
+        return $this->chief_complaint;
+    }
+
+    /**
+     * ✅ TAMBAHAN: Get short complaint untuk preview
+     */
+    public function getShortComplaintAttribute(): ?string
+    {
+        if (empty($this->chief_complaint)) {
+            return null;
+        }
+        
+        return strlen($this->chief_complaint) > 50 
+            ? substr($this->chief_complaint, 0, 50) . '...'
+            : $this->chief_complaint;
     }
 
     /**
@@ -362,5 +397,25 @@ class Queue extends Model
     public function scopeCompleted($query)
     {
         return $query->whereIn('status', ['finished', 'canceled']);
+    }
+
+    /**
+     * ✅ TAMBAHAN: Scope untuk antrian yang memiliki keluhan
+     */
+    public function scopeWithComplaint($query)
+    {
+        return $query->whereNotNull('chief_complaint')
+                    ->where('chief_complaint', '!=', '');
+    }
+
+    /**
+     * ✅ TAMBAHAN: Scope untuk antrian tanpa keluhan
+     */
+    public function scopeWithoutComplaint($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('chief_complaint')
+              ->orWhere('chief_complaint', '');
+        });
     }
 }

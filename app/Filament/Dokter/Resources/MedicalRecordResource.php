@@ -96,7 +96,64 @@ class MedicalRecordResource extends Resource
                             ->required()
                             ->rows(3)
                             ->placeholder('Jelaskan gejala atau keluhan utama pasien...')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->reactive()
+                            ->afterStateHydrated(function ($component, $state, $record) {
+                                // ✅ TAMBAH AUTO-FILL dari antrian jika ada
+                                if (!$state && !$record) { // Hanya saat create baru
+                                    $userId = request()->get('user_id');
+                                    $queueNumber = request()->get('queue_number');
+                                    
+                                    if ($userId) {
+                                        // Cari antrian terbaru user yang ada keluhan
+                                        $queueWithComplaint = \App\Models\Queue::where('user_id', $userId)
+                                            ->whereNotNull('chief_complaint')
+                                            ->where('chief_complaint', '!=', '')
+                                            ->latest('created_at')
+                                            ->first();
+                                        
+                                        if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
+                                            $component->state($queueWithComplaint->chief_complaint);
+                                        }
+                                    } elseif ($queueNumber) {
+                                        // Cari berdasarkan nomor antrian
+                                        $queue = \App\Models\Queue::where('number', $queueNumber)
+                                            ->whereDate('created_at', today())
+                                            ->first();
+                                            
+                                        if ($queue && $queue->chief_complaint) {
+                                            $component->state($queue->chief_complaint);
+                                        }
+                                    }
+                                }
+                            })
+                            ->helperText(function () {
+                                $userId = request()->get('user_id');
+                                $queueNumber = request()->get('queue_number');
+                                
+                                if ($userId || $queueNumber) {
+                                    // Check apakah ada keluhan dari antrian
+                                    if ($userId) {
+                                        $queue = \App\Models\Queue::where('user_id', $userId)
+                                            ->whereNotNull('chief_complaint')
+                                            ->where('chief_complaint', '!=', '')
+                                            ->latest('created_at')
+                                            ->first();
+                                    } else {
+                                        $queue = \App\Models\Queue::where('number', $queueNumber)
+                                            ->whereDate('created_at', today())
+                                            ->first();
+                                    }
+                                    
+                                    if ($queue && $queue->chief_complaint) {
+                                        return "✅ Keluhan diambil dari antrian: \"" . \Illuminate\Support\Str::limit($queue->chief_complaint, 80) . "\"";
+                                    } else {
+                                        return "ℹ️ Pasien tidak mengisi keluhan saat ambil antrian. Silakan tanyakan langsung kepada pasien.";
+                                    }
+                                }
+                                
+                                return "Jelaskan gejala atau keluhan utama pasien secara detail.";
+                            }),
 
                         Forms\Components\Grid::make(2)
                             ->schema([

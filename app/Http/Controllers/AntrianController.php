@@ -57,7 +57,7 @@ class AntrianController extends Controller
     }
 
     /**
-     * ✅ PERBAIKAN: Store dengan pisahkan tanggal antrian dan tanggal ambil
+     * ✅ PERBAIKAN: Store dengan pisahkan tanggal antrian dan tanggal ambil + KELUHAN
      */
     public function store(Request $request)
     {
@@ -65,11 +65,13 @@ class AntrianController extends Controller
             'service_id' => 'required|exists:services,id',
             'doctor_id' => 'nullable|exists:doctor_schedules,id',
             'tanggal' => 'required|date',
+            'chief_complaint' => 'nullable|string|max:1000', // ✅ TAMBAH VALIDASI KELUHAN
         ], [
             'service_id.required' => 'Layanan harus dipilih',
             'doctor_id.exists' => 'Dokter yang dipilih tidak valid',
             'tanggal.required' => 'Tanggal antrian harus dipilih',
             'tanggal.date' => 'Format tanggal tidak valid',
+            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter', // ✅ TAMBAH INI
         ]);
 
         try {
@@ -97,7 +99,7 @@ class AntrianController extends Controller
             // ✅ UBAH: Generate nomor berdasarkan tanggal_antrian
             $queueNumber = $this->generateQueueNumber($request->service_id, $tanggalAntrian);
 
-            // ✅ UBAH: Buat antrian dengan tanggal_antrian
+            // ✅ UBAH: Buat antrian dengan tanggal_antrian + KELUHAN
             $queue = Queue::create([
                 'service_id' => $request->service_id,
                 'user_id' => $user->id,
@@ -105,6 +107,7 @@ class AntrianController extends Controller
                 'number' => $queueNumber,
                 'status' => 'waiting',
                 'tanggal_antrian' => $tanggalAntrian,  // ✅ TAMBAH INI - Tanggal yang dipilih
+                'chief_complaint' => $request->chief_complaint, // ✅ TAMBAH INI - Keluhan dari form
                 'created_at' => $tanggalAmbil,         // ✅ UBAH INI - Kapan ambil nomor
                 'updated_at' => $tanggalAmbil,
             ]);
@@ -112,6 +115,15 @@ class AntrianController extends Controller
             DB::commit();
 
             $message = 'Antrian berhasil dibuat untuk tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y') . '! Nomor antrian Anda: ' . $queueNumber;
+            
+            // ✅ TAMBAH INFO KELUHAN JIKA ADA
+            if (!empty($request->chief_complaint)) {
+                $shortComplaint = strlen($request->chief_complaint) > 50 
+                    ? substr($request->chief_complaint, 0, 50) . '...'
+                    : $request->chief_complaint;
+                $message .= ' (Keluhan: ' . $shortComplaint . ')';
+            }
+            
             if ($request->doctor_id) {
                 $doctorSchedule = DoctorSchedule::find($request->doctor_id);
                 if ($doctorSchedule) {
@@ -183,6 +195,9 @@ class AntrianController extends Controller
         $request->validate([
             'service_id' => 'required|exists:services,id',
             'doctor_id' => 'nullable|exists:doctor_schedules,id',
+            'chief_complaint' => 'nullable|string|max:1000', // ✅ TAMBAH VALIDASI KELUHAN
+        ], [
+            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter', // ✅ TAMBAH INI
         ]);
 
         try {
@@ -191,6 +206,7 @@ class AntrianController extends Controller
             $updateData = [
                 'service_id' => $request->service_id,
                 'doctor_id' => $request->doctor_id,
+                'chief_complaint' => $request->chief_complaint, // ✅ TAMBAH INI - Update keluhan
             ];
             
             // ✅ UBAH: Generate nomor baru berdasarkan tanggal_antrian
@@ -202,7 +218,17 @@ class AntrianController extends Controller
             $queue->update($updateData);
             DB::commit();
 
-            return redirect()->route('antrian.index')->with('success', 'Antrian berhasil diubah!');
+            $message = 'Antrian berhasil diubah!';
+            
+            // ✅ TAMBAH INFO KELUHAN JIKA DIUPDATE
+            if ($request->filled('chief_complaint')) {
+                $shortComplaint = strlen($request->chief_complaint) > 50 
+                    ? substr($request->chief_complaint, 0, 50) . '...'
+                    : $request->chief_complaint;
+                $message .= ' (Keluhan: ' . $shortComplaint . ')';
+            }
+
+            return redirect()->route('antrian.index')->with('success', $message);
             
         } catch (\Exception $e) {
             DB::rollBack();
