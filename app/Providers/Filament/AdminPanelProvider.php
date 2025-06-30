@@ -1,5 +1,6 @@
 <?php
-// app/Providers/Filament/AdminPanelProvider.php
+// File: app/Providers/Filament/AdminPanelProvider.php
+// UPDATE: Tambahkan Patient Management Resource
 
 namespace App\Providers\Filament;
 
@@ -34,6 +35,11 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 \App\Filament\Pages\AdminDashboard::class,
+            ])
+            ->resources([
+                // ✅ TAMBAHAN: Register Patient Management Resource secara eksplisit
+                \App\Filament\Resources\PatientManagementResource::class,
+                // Resource lain akan di-discover otomatis
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([])
