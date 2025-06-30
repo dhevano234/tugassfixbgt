@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/QueueResource.php
+// File: app/Filament/Dokter/Resources/QueueResource.php - TAMBAH KOLOM KELUHAN
 
 namespace App\Filament\Dokter\Resources;
 
@@ -55,6 +55,29 @@ class QueueResource extends Resource
                         return 'Walk-in';
                     })
                     ->wrap(),
+
+                // ✅ TAMBAH: Kolom Keluhan untuk Dokter
+                Tables\Columns\TextColumn::make('chief_complaint')
+                    ->label('Keluhan')
+                    ->limit(50)
+                    ->wrap()
+                    ->placeholder('Tidak ada keluhan')
+                    ->tooltip(function (Tables\Columns\TextColumn $column): ?string {
+                        $state = $column->getState();
+                        return strlen($state) > 50 ? $state : null;
+                    })
+                    ->icon(function ($record) {
+                        return $record->chief_complaint ? 'heroicon-m-chat-bubble-left-ellipsis' : 'heroicon-m-minus';
+                    })
+                    ->iconColor(function ($record) {
+                        return $record->chief_complaint ? 'success' : 'gray';
+                    })
+                    ->description(function ($record): string {
+                        if ($record->chief_complaint) {
+                            return '📝 Keluhan diisi saat ambil antrian';
+                        }
+                        return '💬 Tidak ada keluhan dari antrian';
+                    }),
                     
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status Antrian')
@@ -105,6 +128,19 @@ class QueueResource extends Resource
                     ->label('Hari Ini')
                     ->query(fn ($query) => $query->whereDate('created_at', today()))
                     ->default(),
+
+                // ✅ TAMBAH: Filter untuk keluhan
+                Tables\Filters\Filter::make('has_complaint')
+                    ->label('Punya Keluhan')
+                    ->query(fn ($query) => $query->whereNotNull('chief_complaint')
+                        ->where('chief_complaint', '!=', '')),
+
+                Tables\Filters\Filter::make('no_complaint')
+                    ->label('Tanpa Keluhan')
+                    ->query(fn ($query) => $query->where(function ($q) {
+                        $q->whereNull('chief_complaint')
+                          ->orWhere('chief_complaint', '');
+                    })),
             ])
             ->actions([
                 // ===== TOMBOL PANGGIL =====
@@ -152,7 +188,7 @@ class QueueResource extends Resource
                     ->modalSubmitActionLabel('Ya, Panggil')
                     ->modalCancelActionLabel('Batal'),
 
-                // ===== TOMBOL REKAM MEDIS =====
+                // ✅ PERBAIKAN: TOMBOL REKAM MEDIS dengan info keluhan
                 Action::make('create_medical_record')
                     ->label('Rekam Medis')
                     ->icon('heroicon-o-document-plus')
@@ -172,10 +208,38 @@ class QueueResource extends Resource
                             'service' => $record->service->name ?? null,
                         ]);
                     })
-                    ->tooltip(fn (Queue $record) => $record->user_id 
-                        ? "Buat rekam medis untuk {$record->user->name}" 
-                        : "Buat rekam medis baru"
-                    ),
+                    ->tooltip(function (Queue $record) {
+                        if ($record->user_id) {
+                            $tooltip = "Buat rekam medis untuk {$record->user->name}";
+                            if ($record->chief_complaint) {
+                                $tooltip .= "\n📝 Ada keluhan: " . \Illuminate\Support\Str::limit($record->chief_complaint, 50);
+                            } else {
+                                $tooltip .= "\n💬 Tidak ada keluhan";
+                            }
+                            return $tooltip;
+                        }
+                        return "Buat rekam medis baru";
+                    }),
+
+                // ===== TOMBOL LIHAT KELUHAN (BARU) =====
+                Action::make('view_complaint')
+                    ->label('Lihat Keluhan')
+                    ->icon('heroicon-o-chat-bubble-left-ellipsis')
+                    ->color('info')
+                    ->size('sm')
+                    ->visible(fn (Queue $record) => !empty($record->chief_complaint))
+                    ->action(function (Queue $record) {
+                        $complaint = $record->chief_complaint;
+                        $patientName = $record->user->name ?? 'Walk-in';
+                        
+                        Notification::make()
+                            ->title("Keluhan Pasien: {$patientName}")
+                            ->body("Antrian #{$record->number}\n\n📝 Keluhan:\n{$complaint}")
+                            ->info()
+                            ->duration(15000) // 15 detik untuk baca keluhan
+                            ->send();
+                    })
+                    ->tooltip('Lihat keluhan lengkap pasien'),
 
                 // ===== TOMBOL SELESAI =====
                 Action::make('finish')

@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource.php - SIMPLIFIED with Auto-fill
+// File: app/Filament/Dokter/Resources/MedicalRecordResource.php - PERBAIKAN AUTO-FILL KELUHAN
 
 namespace App\Filament\Dokter\Resources;
 
@@ -69,8 +69,22 @@ class MedicalRecordResource extends Resource
                                             } else {
                                                 $set('display_medical_record_number', 'Belum ada nomor rekam medis');
                                             }
+
+                                            // ✅ PERBAIKAN: AUTO-FILL KELUHAN dari antrian terbaru yang aktif
+                                            $latestComplaint = \App\Models\Queue::where('user_id', $state)
+                                                ->whereNotNull('chief_complaint')
+                                                ->where('chief_complaint', '!=', '')
+                                                ->whereIn('status', ['waiting', 'serving']) // ✅ Hanya antrian aktif
+                                                ->whereDate('created_at', today()) // ✅ Hanya hari ini
+                                                ->latest('created_at')
+                                                ->first();
+
+                                            if ($latestComplaint && $latestComplaint->chief_complaint) {
+                                                $set('chief_complaint', $latestComplaint->chief_complaint);
+                                            }
                                         } else {
                                             $set('display_medical_record_number', '');
+                                            $set('chief_complaint', ''); // Clear keluhan jika user di-deselect
                                         }
                                     }),
 
@@ -99,16 +113,18 @@ class MedicalRecordResource extends Resource
                             ->columnSpanFull()
                             ->reactive()
                             ->afterStateHydrated(function ($component, $state, $record) {
-                                // ✅ TAMBAH AUTO-FILL dari antrian jika ada
+                                // ✅ PERBAIKAN: AUTO-FILL dari antrian jika ada saat load form
                                 if (!$state && !$record) { // Hanya saat create baru
                                     $userId = request()->get('user_id');
                                     $queueNumber = request()->get('queue_number');
                                     
                                     if ($userId) {
-                                        // Cari antrian terbaru user yang ada keluhan
+                                        // ✅ PERBAIKAN: Cari antrian terbaru user yang ada keluhan DAN masih aktif
                                         $queueWithComplaint = \App\Models\Queue::where('user_id', $userId)
                                             ->whereNotNull('chief_complaint')
                                             ->where('chief_complaint', '!=', '')
+                                            ->whereIn('status', ['waiting', 'serving']) // ✅ TAMBAH: hanya antrian aktif
+                                            ->whereDate('created_at', today()) // ✅ TAMBAH: hanya hari ini
                                             ->latest('created_at')
                                             ->first();
                                         
@@ -132,11 +148,13 @@ class MedicalRecordResource extends Resource
                                 $queueNumber = request()->get('queue_number');
                                 
                                 if ($userId || $queueNumber) {
-                                    // Check apakah ada keluhan dari antrian
+                                    // ✅ PERBAIKAN: Check apakah ada keluhan dari antrian yang aktif
                                     if ($userId) {
                                         $queue = \App\Models\Queue::where('user_id', $userId)
                                             ->whereNotNull('chief_complaint')
                                             ->where('chief_complaint', '!=', '')
+                                            ->whereIn('status', ['waiting', 'serving'])
+                                            ->whereDate('created_at', today())
                                             ->latest('created_at')
                                             ->first();
                                     } else {
@@ -146,7 +164,7 @@ class MedicalRecordResource extends Resource
                                     }
                                     
                                     if ($queue && $queue->chief_complaint) {
-                                        return "✅ Keluhan diambil dari antrian: \"" . \Illuminate\Support\Str::limit($queue->chief_complaint, 80) . "\"";
+                                        return "✅ Keluhan diambil dari antrian #{$queue->number}: \"" . \Illuminate\Support\Str::limit($queue->chief_complaint, 80) . "\"";
                                     } else {
                                         return "ℹ️ Pasien tidak mengisi keluhan saat ambil antrian. Silakan tanyakan langsung kepada pasien.";
                                     }

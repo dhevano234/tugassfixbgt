@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php - SIMPLIFIED
+// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php - PERBAIKAN AUTO-FILL KELUHAN
 
 namespace App\Filament\Dokter\Resources\MedicalRecordResource\Pages;
 
@@ -64,10 +64,12 @@ class CreateMedicalRecord extends CreateRecord
             
             // ✅ VALIDASI: Pastikan user ada dan role-nya 'user'
             if ($user && $user->role === 'user') {
-                // ✅ CARI KELUHAN DARI ANTRIAN TERBARU
+                // ✅ PERBAIKAN: Cari keluhan dari antrian terbaru yang masih aktif
                 $queueWithComplaint = Queue::where('user_id', $userId)
                     ->whereNotNull('chief_complaint')
                     ->where('chief_complaint', '!=', '')
+                    ->whereIn('status', ['waiting', 'serving']) // ✅ Hanya antrian aktif
+                    ->whereDate('created_at', today()) // ✅ Hanya hari ini
                     ->latest('created_at')
                     ->first();
                 
@@ -77,14 +79,14 @@ class CreateMedicalRecord extends CreateRecord
                     'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
                 ];
                 
-                // ✅ AUTO-FILL KELUHAN JIKA ADA
+                // ✅ PERBAIKAN: AUTO-FILL KELUHAN JIKA ADA dari antrian aktif
                 if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
                     $formData['chief_complaint'] = $queueWithComplaint->chief_complaint;
                 }
                 
                 $this->form->fill($formData);
                 
-                // ✅ ENHANCED NOTIFICATION dengan info keluhan
+                // ✅ ENHANCED NOTIFICATION dengan info keluhan yang lebih detail
                 $notificationBody = "Auto-selected: {$user->name}";
                 
                 if ($user->medical_record_number) {
@@ -97,22 +99,34 @@ class CreateMedicalRecord extends CreateRecord
                     $notificationBody .= " (Antrian: {$queueNumber})";
                 }
                 
-                // ✅ TAMBAH INFO KELUHAN
+                // ✅ PERBAIKAN: Tambah info keluhan dengan lebih detail
                 if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
-                    $complainLimit = 60;
+                    $complainLimit = 100;
                     $shortComplaint = strlen($queueWithComplaint->chief_complaint) > $complainLimit 
                         ? substr($queueWithComplaint->chief_complaint, 0, $complainLimit) . '...'
                         : $queueWithComplaint->chief_complaint;
-                    $notificationBody .= "\n📝 Keluhan dari antrian: \"{$shortComplaint}\"";
+                    $notificationBody .= "\n📝 Keluhan dari antrian #{$queueWithComplaint->number}: \"{$shortComplaint}\"";
+                    $notificationBody .= "\n⏰ Diambil: {$queueWithComplaint->created_at->format('d/m/Y H:i')}";
                 } else {
-                    $notificationBody .= "\n💬 Pasien tidak mengisi keluhan saat ambil antrian";
+                    // ✅ Cek apakah ada antrian tapi tanpa keluhan
+                    $anyQueue = Queue::where('user_id', $userId)
+                        ->whereIn('status', ['waiting', 'serving'])
+                        ->whereDate('created_at', today())
+                        ->latest('created_at')
+                        ->first();
+                    
+                    if ($anyQueue) {
+                        $notificationBody .= "\n💬 Pasien punya antrian #{$anyQueue->number} tapi tidak mengisi keluhan";
+                    } else {
+                        $notificationBody .= "\n💬 Tidak ada antrian aktif hari ini";
+                    }
                 }
                 
                 Notification::make()
                     ->title('Pasien Dari Antrian')
                     ->body($notificationBody)
                     ->success()
-                    ->duration(8000) // Lebih lama karena ada info keluhan
+                    ->duration(10000) // Lebih lama karena ada info detail
                     ->send();
                     
                 // Update page title jika ada queue number
@@ -138,7 +152,7 @@ class CreateMedicalRecord extends CreateRecord
                     ->send();
             }
         } elseif ($queueNumber) {
-            // ✅ HANDLE BERDASARKAN QUEUE NUMBER SAJA
+            // ✅ PERBAIKAN: HANDLE BERDASARKAN QUEUE NUMBER SAJA
             $queue = Queue::where('number', $queueNumber)
                 ->whereDate('created_at', today())
                 ->with('user')
@@ -160,11 +174,16 @@ class CreateMedicalRecord extends CreateRecord
                 $this->form->fill($formData);
                 
                 $notificationBody = "Antrian {$queueNumber}: {$user->name}";
+                if ($user->medical_record_number) {
+                    $notificationBody .= " | No. RM: {$user->medical_record_number}";
+                }
+                
                 if ($queue->chief_complaint) {
-                    $shortComplaint = strlen($queue->chief_complaint) > 60 
-                        ? substr($queue->chief_complaint, 0, 60) . '...'
+                    $shortComplaint = strlen($queue->chief_complaint) > 100 
+                        ? substr($queue->chief_complaint, 0, 100) . '...'
                         : $queue->chief_complaint;
                     $notificationBody .= "\n📝 Keluhan: \"{$shortComplaint}\"";
+                    $notificationBody .= "\n⏰ Status: {$queue->status_label}";
                 } else {
                     $notificationBody .= "\n💬 Tidak ada keluhan dari antrian";
                 }
@@ -173,7 +192,7 @@ class CreateMedicalRecord extends CreateRecord
                     ->title('Data dari Antrian')
                     ->body($notificationBody)
                     ->success()
-                    ->duration(8000)
+                    ->duration(10000)
                     ->send();
             }
         }
