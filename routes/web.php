@@ -1,5 +1,5 @@
 <?php
-// routes/web.php
+// File: routes/web.php - ADD route untuk realtime estimation
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LoginController;
@@ -42,29 +42,32 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/home', [HomeController::class, 'index'])->name('home');
 
+    // ✅ NEW: API untuk realtime estimation
+    Route::get('/dashboard/realtime-estimation', [DashboardController::class, 'getRealtimeEstimation'])->name('dashboard.realtime-estimation');
+
     // Profile Routes
     Route::get('/editprofile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('/password', [ProfileController::class, 'updatePassword'])->name('password.update');
 
-    // ✅ PERBAIKAN: Riwayat Pasien - Routes yang lengkap
+    // Riwayat Pasien Routes
     Route::prefix('riwayatkunjungan')->name('riwayat.')->controller(RiwayatController::class)->group(function () {
-        Route::get('/', 'index')->name('index');                           // GET /riwayatkunjungan
-        Route::get('/export', 'export')->name('export');                   // GET /riwayatkunjungan/export
-        Route::get('/statistics', 'statistics')->name('statistics');       // GET /riwayatkunjungan/statistics
-        Route::get('/{queue}', 'show')->name('show');                      // GET /riwayatkunjungan/{id}
+        Route::get('/', 'index')->name('index');
+        Route::get('/export', 'export')->name('export');
+        Route::get('/statistics', 'statistics')->name('statistics');
+        Route::get('/{queue}', 'show')->name('show');
     });
 
-    // ✅ EXISTING: Antrian Routes dengan struktur yang konsisten
+    // Antrian Routes
     Route::prefix('antrian')->name('antrian.')->controller(AntrianController::class)->group(function () {
-        Route::get('/', 'index')->name('index');                           // GET /antrian
-        Route::get('/create', 'create')->name('create');                   // GET /antrian/create
-        Route::post('/', 'store')->name('store');                          // POST /antrian
-        Route::get('/{queue}', 'show')->name('show');                      // GET /antrian/{id}
-        Route::get('/{queue}/edit', 'edit')->name('edit');                 // GET /antrian/{id}/edit
-        Route::put('/{queue}', 'update')->name('update');                  // PUT /antrian/{id}
-        Route::delete('/{queue}', 'destroy')->name('destroy');             // DELETE /antrian/{id}
-        Route::get('/{queue}/print', 'print')->name('print');              // GET /antrian/{id}/print
+        Route::get('/', 'index')->name('index');
+        Route::get('/create', 'create')->name('create');
+        Route::post('/', 'store')->name('store');
+        Route::get('/{queue}', 'show')->name('show');
+        Route::get('/{queue}/edit', 'edit')->name('edit');
+        Route::put('/{queue}', 'update')->name('update');
+        Route::delete('/{queue}', 'destroy')->name('destroy');
+        Route::get('/{queue}/print', 'print')->name('print');
     });
 
     // Doctor Info
@@ -73,7 +76,7 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
     Route::get('/jadwaldokter', [DoctorController::class, 'jadwaldokter'])->name('jadwaldokter');
 });
 
-// ✅ Test Route untuk Multi-Session (Development only)
+// Test Route untuk Multi-Session (Development only)
 Route::get('/test-sessions', function () {
     return response()->json([
         'active_sessions' => SessionManager::getActiveSessions(),

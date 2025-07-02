@@ -1,6 +1,5 @@
 <?php
-// File: app/Models/Queue.php
-// PERBAIKAN LENGKAP untuk Queue Model dengan chief_complaint support
+// File: app/Models/Queue.php - FINAL VERSION
 
 namespace App\Models;
 
@@ -19,7 +18,9 @@ class Queue extends Model
         'number',
         'status',
         'tanggal_antrian',
-        'chief_complaint', // ✅ TAMBAH INI - untuk keluhan dari antrian
+        'chief_complaint',
+        'estimated_call_time', // ✅ ESTIMASI WAKTU PANGGILAN
+        'extra_delay_minutes', // ✅ EXTRA DELAY 5 MENIT
         'called_at',
         'served_at',
         'canceled_at',
@@ -28,6 +29,7 @@ class Queue extends Model
 
     protected $casts = [
         'tanggal_antrian' => 'date',
+        'estimated_call_time' => 'datetime', // ✅ CAST DATETIME
         'called_at' => 'datetime',
         'served_at' => 'datetime', 
         'canceled_at' => 'datetime',
@@ -36,7 +38,7 @@ class Queue extends Model
         'updated_at' => 'datetime',
     ];
 
-    // ✅ RELATIONSHIP YANG BENAR
+    // ✅ RELATIONSHIPS
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
@@ -52,7 +54,6 @@ class Queue extends Model
         return $this->belongsTo(User::class);
     }
 
-    // ✅ PERBAIKAN UTAMA: Tambah relationship ke DoctorSchedule
     public function doctorSchedule(): BelongsTo
     {
         return $this->belongsTo(DoctorSchedule::class, 'doctor_id');
@@ -63,19 +64,13 @@ class Queue extends Model
         return $this->hasOne(MedicalRecord::class);
     }
 
-    // ✅ ACCESSOR METHODS YANG BENAR
-
-    /**
-     * ✅ PERBAIKAN: Get doctor name dari doctor_id (DoctorSchedule) atau Medical Record
-     */
+    // ✅ EXISTING ACCESSORS
     public function getDoctorNameAttribute(): ?string
     {
-        // Prioritas 1: Ambil dari doctor_id yang dipilih saat antrian
         if ($this->doctor_id && $this->doctorSchedule) {
             return $this->doctorSchedule->doctor_name;
         }
         
-        // Prioritas 2: Ambil dari medical record jika ada
         if ($this->medicalRecord && $this->medicalRecord->doctor) {
             return $this->medicalRecord->doctor->name;
         }
@@ -83,29 +78,16 @@ class Queue extends Model
         return null;
     }
 
-    /**
-     * ✅ TAMBAHAN: Check apakah ada keluhan dari antrian
-     */
     public function hasChiefComplaint(): bool
     {
         return !empty($this->chief_complaint);
     }
 
-    /**
-     * ✅ TAMBAHAN: Get keluhan yang sudah diformat
-     */
     public function getFormattedChiefComplaintAttribute(): ?string
     {
-        if (empty($this->chief_complaint)) {
-            return null;
-        }
-        
-        return $this->chief_complaint;
+        return empty($this->chief_complaint) ? null : $this->chief_complaint;
     }
 
-    /**
-     * ✅ TAMBAHAN: Get short complaint untuk preview
-     */
     public function getShortComplaintAttribute(): ?string
     {
         if (empty($this->chief_complaint)) {
@@ -117,41 +99,26 @@ class Queue extends Model
             : $this->chief_complaint;
     }
 
-    /**
-     * ✅ PERBAIKAN: Get poli name dari service relationship
-     */
     public function getPoliAttribute(): ?string
     {
         return $this->service->name ?? null;
     }
 
-    /**
-     * ✅ PERBAIKAN: Get patient name dari user relationship
-     */
     public function getNameAttribute(): ?string
     {
         return $this->user->name ?? null;
     }
 
-    /**
-     * ✅ PERBAIKAN: Get patient phone dari user relationship
-     */
     public function getPhoneAttribute(): ?string
     {
         return $this->user->phone ?? null;
     }
 
-    /**
-     * ✅ PERBAIKAN: Get patient gender dari user relationship
-     */
     public function getGenderAttribute(): ?string
     {
         return $this->user->gender ?? null;
     }
 
-    /**
-     * Get status badge color untuk UI
-     */
     public function getStatusBadgeAttribute(): string
     {
         return match($this->status) {
@@ -163,9 +130,6 @@ class Queue extends Model
         };
     }
 
-    /**
-     * Get status dalam bahasa Indonesia
-     */
     public function getStatusLabelAttribute(): string
     {
         return match($this->status) {
@@ -177,65 +141,41 @@ class Queue extends Model
         };
     }
 
-    /**
-     * ✅ PERBAIKAN TIMEZONE: Get tanggal antrian dalam format yang mudah dibaca dengan timezone Indonesia
-     */
     public function getFormattedTanggalAttribute(): string
     {
         return $this->created_at->setTimezone('Asia/Jakarta')->format('d F Y');
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk waktu ambil antrian dengan timezone Indonesia
-     */
     public function getWaktuAmbilAttribute(): string
     {
         return $this->created_at->setTimezone('Asia/Jakarta')->format('H:i');
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk waktu dipanggil dengan timezone Indonesia
-     */
     public function getWaktuDipanggilAttribute(): ?string
     {
         return $this->called_at ? $this->called_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk waktu selesai dengan timezone Indonesia
-     */
     public function getWaktuSelesaiAttribute(): ?string
     {
         return $this->finished_at ? $this->finished_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk waktu dilayani dengan timezone Indonesia
-     */
     public function getWaktuDilayaniAttribute(): ?string
     {
         return $this->served_at ? $this->served_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk waktu dibatalkan dengan timezone Indonesia
-     */
     public function getWaktuDibatalkanAttribute(): ?string
     {
         return $this->canceled_at ? $this->canceled_at->setTimezone('Asia/Jakarta')->format('H:i') : null;
     }
 
-    /**
-     * ✅ TAMBAHAN: Accessor untuk datetime lengkap dengan timezone Indonesia
-     */
     public function getFullDateTimeAttribute(): string
     {
         return $this->created_at->setTimezone('Asia/Jakarta')->format('l, d F Y H:i');
     }
 
-    /**
-     * ✅ TAMBAHAN: Get informasi timeline antrian
-     */
     public function getTimelineInfoAttribute(): array
     {
         $timeline = [];
@@ -286,50 +226,10 @@ class Queue extends Model
         return $timeline;
     }
 
-    // ✅ HELPER METHODS
-
+    // ✅ ESTIMASI WAKTU TUNGGU ACCESSORS - FINAL VERSION
+    
     /**
-     * Check apakah antrian bisa diedit
-     */
-    public function canEdit(): bool
-    {
-        return in_array($this->status, ['waiting']);
-    }
-
-    /**
-     * Check apakah antrian bisa dibatalkan
-     */
-    public function canCancel(): bool
-    {
-        return in_array($this->status, ['waiting']);
-    }
-
-    /**
-     * Check apakah antrian bisa diprint
-     */
-    public function canPrint(): bool
-    {
-        return in_array($this->status, ['waiting', 'serving', 'finished']);
-    }
-
-    /**
-     * Check apakah antrian sudah selesai atau dibatalkan
-     */
-    public function isCompleted(): bool
-    {
-        return in_array($this->status, ['finished', 'canceled']);
-    }
-
-    /**
-     * ✅ TAMBAHAN: Check apakah antrian sedang aktif (menunggu atau dilayani)
-     */
-    public function isActive(): bool
-    {
-        return in_array($this->status, ['waiting', 'serving']);
-    }
-
-    /**
-     * ✅ TAMBAHAN: Get estimasi waktu tunggu (dalam menit)
+     * ✅ Get estimasi waktu tunggu dalam menit (INTEGER BERSIH)
      */
     public function getEstimasiTungguAttribute(): ?int
     {
@@ -337,37 +237,155 @@ class Queue extends Model
             return null;
         }
         
-        // Hitung antrian yang ada di depan
+        // Jika ada estimated_call_time, gunakan itu
+        if ($this->estimated_call_time) {
+            $now = now();
+            $estimatedTime = $this->estimated_call_time;
+            
+            if ($estimatedTime > $now) {
+                // Masih dalam estimasi normal
+                $diffMinutes = $now->diffInMinutes($estimatedTime);
+                return (int) round($diffMinutes); // ✅ INTEGER BERSIH
+            } else {
+                // Sudah lewat estimasi, pakai extra delay
+                return (int) ($this->extra_delay_minutes ?: 5);
+            }
+        }
+        
+        // ✅ FALLBACK: Kalau belum ada estimated_call_time, hitung manual
         $antrianDidepan = self::where('service_id', $this->service_id)
             ->where('status', 'waiting')
-            ->where('created_at', '<', $this->created_at)
+            ->where('id', '<', $this->id)
+            ->whereDate('created_at', today())
             ->count();
         
-        // Estimasi 15 menit per antrian
-        return $antrianDidepan * 15;
+        return ($antrianDidepan + 1) * 15; // 15 menit per antrian
+    }
+
+    /**
+     * ✅ Get estimasi waktu panggilan yang sudah diformat
+     */
+    public function getFormattedEstimasiAttribute(): ?string
+    {
+        if ($this->status !== 'waiting') {
+            return null;
+        }
+
+        $estimasiMenit = $this->estimasi_tunggu; // Pakai accessor yang sudah diperbaiki
+        
+        if ($estimasiMenit < 1) {
+            return "Segera dipanggil";
+        } elseif ($estimasiMenit < 60) {
+            return "~{$estimasiMenit} menit lagi";
+        } else {
+            $hours = floor($estimasiMenit / 60);
+            $minutes = $estimasiMenit % 60;
+            return "~{$hours}j {$minutes}m lagi";
+        }
+    }
+
+    /**
+     * ✅ Get status delay (on_time, delayed)
+     */
+    public function getDelayStatusAttribute(): string
+    {
+        if ($this->status !== 'waiting') {
+            return 'unknown';
+        }
+
+        if (!$this->estimated_call_time) {
+            return 'on_time'; // Default jika belum ada estimasi
+        }
+
+        $now = now();
+        $estimatedTime = $this->estimated_call_time;
+        
+        return $estimatedTime > $now ? 'on_time' : 'delayed';
+    }
+
+    /**
+     * ✅ Get posisi dalam antrian
+     */
+    public function getQueuePositionAttribute(): int
+    {
+        return self::where('service_id', $this->service_id)
+            ->where('status', 'waiting')
+            ->where('id', '<', $this->id)
+            ->whereDate('created_at', today())
+            ->count() + 1;
+    }
+
+    /**
+     * ✅ Get estimasi waktu panggilan dalam format jam
+     */
+    public function getEstimatedCallTimeFormattedAttribute(): ?string
+    {
+        if (!$this->estimated_call_time) {
+            // FALLBACK: Hitung estimasi manual
+            $estimasiMenit = $this->estimasi_tunggu;
+            $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            return $estimatedTime->setTimezone('Asia/Jakarta')->format('H:i');
+        }
+
+        return $this->estimated_call_time->setTimezone('Asia/Jakarta')->format('H:i');
+    }
+
+    /**
+     * ✅ Check apakah antrian sudah terlambat dari estimasi
+     */
+    public function getIsOverdueAttribute(): bool
+    {
+        if ($this->status !== 'waiting') {
+            return false;
+        }
+
+        if (!$this->estimated_call_time) {
+            // FALLBACK: Hitung berdasarkan created_at + estimasi
+            $estimasiMenit = $this->estimasi_tunggu;
+            $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            return $estimatedTime < now();
+        }
+
+        return $this->estimated_call_time < now();
+    }
+
+    // ✅ HELPER METHODS
+    public function canEdit(): bool
+    {
+        return in_array($this->status, ['waiting']);
+    }
+
+    public function canCancel(): bool
+    {
+        return in_array($this->status, ['waiting']);
+    }
+
+    public function canPrint(): bool
+    {
+        return in_array($this->status, ['waiting', 'serving', 'finished']);
+    }
+
+    public function isCompleted(): bool
+    {
+        return in_array($this->status, ['finished', 'canceled']);
+    }
+
+    public function isActive(): bool
+    {
+        return in_array($this->status, ['waiting', 'serving']);
     }
 
     // ✅ SCOPE METHODS
-
-    /**
-     * Scope untuk antrian hari ini
-     */
     public function scopeToday($query)
     {
         return $query->whereDate('created_at', today());
     }
 
-    /**
-     * Scope untuk antrian berdasarkan user tertentu
-     */
     public function scopeForUser($query, $userId)
     {
         return $query->where('user_id', $userId);
     }
 
-    /**
-     * Scope untuk antrian berdasarkan service/poli
-     */
     public function scopeForService($query, $serviceName)
     {
         return $query->whereHas('service', function($q) use ($serviceName) {
@@ -375,47 +393,45 @@ class Queue extends Model
         });
     }
 
-    /**
-     * Scope untuk antrian berdasarkan status
-     */
     public function scopeWithStatus($query, $status)
     {
         return $query->where('status', $status);
     }
 
-    /**
-     * ✅ TAMBAHAN: Scope untuk antrian yang aktif (waiting atau serving)
-     */
     public function scopeActive($query)
     {
         return $query->whereIn('status', ['waiting', 'serving']);
     }
 
-    /**
-     * ✅ TAMBAHAN: Scope untuk antrian yang selesai
-     */
     public function scopeCompleted($query)
     {
         return $query->whereIn('status', ['finished', 'canceled']);
     }
 
-    /**
-     * ✅ TAMBAHAN: Scope untuk antrian yang memiliki keluhan
-     */
     public function scopeWithComplaint($query)
     {
         return $query->whereNotNull('chief_complaint')
                     ->where('chief_complaint', '!=', '');
     }
 
-    /**
-     * ✅ TAMBAHAN: Scope untuk antrian tanpa keluhan
-     */
     public function scopeWithoutComplaint($query)
     {
         return $query->where(function ($q) {
             $q->whereNull('chief_complaint')
               ->orWhere('chief_complaint', '');
         });
+    }
+
+    // ✅ SCOPES untuk estimasi waktu
+    public function scopeOverdue($query)
+    {
+        return $query->where('status', 'waiting')
+                    ->where('estimated_call_time', '<', now());
+    }
+
+    public function scopeOnTime($query)
+    {
+        return $query->where('status', 'waiting')
+                    ->where('estimated_call_time', '>=', now());
     }
 }
