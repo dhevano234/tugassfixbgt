@@ -1,5 +1,5 @@
 <?php
-// File: app/Http/Controllers/DashboardController.php - FIXED decimal formatting
+// File: app/Http/Controllers/DashboardController.php - UPDATED: Remove quick actions, fix doctor count
 
 namespace App\Http\Controllers;
 
@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Queue;
 use App\Models\User;
 use App\Models\Service;
+use App\Models\DoctorSchedule; // ✅ TAMBAH IMPORT INI
 use Carbon\Carbon;
 
 class DashboardController extends Controller
@@ -25,11 +26,13 @@ class DashboardController extends Controller
             ->with(['service', 'counter'])
             ->first();
 
-        // ✅ STATISTIK REAL untuk cards
+        // ✅ STATISTIK REAL untuk cards - PERBAIKAN DOKTER AKTIF
         $stats = [
             'antrian_hari_ini' => Queue::whereDate('created_at', $today)->count(),
             'total_pasien' => User::where('role', 'user')->count(),
-            'dokter_aktif' => User::where('role', 'dokter')->count(),
+            'dokter_aktif' => DoctorSchedule::distinct('doctor_name')
+                                           ->where('is_active', true)
+                                           ->count('doctor_name'), // ✅ UBAH: Hitung dari doctor_schedules
         ];
 
         // ✅ STATUS ANTRIAN REAL untuk chart

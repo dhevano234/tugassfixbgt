@@ -423,7 +423,7 @@ body {
     </div>
     
     <div class="user-section">
-        <span class="user-welcome">Selamat datang, {{ Auth::user()->name }}</span>
+        <span class="user-welcome">{{ Auth::user()->name }}</span>
         <div class="user-avatar" onclick="toggleDropdown(event)">
             <i class="fas fa-user"></i>
             <div class="dropdown-menu" id="userDropdown">

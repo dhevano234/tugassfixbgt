@@ -51,6 +51,10 @@
                         @endif
                     </div>
                 </div>
+                <!-- Manual Refresh Button -->
+                {{-- <button onclick="forceRefreshEstimation()" class="refresh-btn" title="Refresh Estimasi">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button> --}}
             </div>
             @elseif($antrianAktif->status === 'serving')
             <div class="serving-card">
@@ -100,16 +104,16 @@
         </div>
     </div>
     
-    <!-- Content Row -->
+    <!-- Content Row - Status Antrian Only -->
     <div class="content-row">
         <!-- Status Antrian dengan data real -->
-        <div class="content-card animate">
+        <div class="content-card animate full-width">
             <div class="card-header">
                 <i class="fas fa-chart-bar" style="color: #27ae60;"></i>
                 <h5>Status Antrian Hari Ini</h5>
             </div>
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                 <div style="text-align: center; padding: 15px; background: #e3f2fd; border-radius: 10px;">
                     <div style="font-size: 1.5rem; font-weight: 700; color: #1976d2;">{{ $statusAntrian['menunggu'] }}</div>
                     <small style="color: #7f8c8d;">Menunggu</small>
@@ -126,29 +130,6 @@
                     <div style="font-size: 1.5rem; font-weight: 700; color: #d32f2f;">{{ $statusAntrian['dibatalkan'] }}</div>
                     <small style="color: #7f8c8d;">Dibatalkan</small>
                 </div>
-            </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="content-card animate">
-            <div class="card-header">
-                <i class="fas fa-bolt" style="color: #3498db;"></i>
-                <h5>Quick Actions</h5>
-            </div>
-            
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <a href="/antrian/create" class="btn btn-primary" style="justify-content: flex-start;">
-                    <i class="fas fa-plus-circle"></i>
-                    Buat Antrian Baru
-                </a>
-                <a href="/riwayatkunjungan" class="btn btn-secondary" style="justify-content: flex-start;">
-                    <i class="fas fa-history"></i>
-                    Lihat Riwayat
-                </a>
-                <a href="/jadwaldokter" class="btn btn-secondary" style="justify-content: flex-start;">
-                    <i class="fas fa-calendar"></i>
-                    Jadwal Dokter
-                </a>
             </div>
         </div>
     </div>
@@ -240,6 +221,7 @@
     border-radius: 12px;
     padding: 20px;
     border-left: 4px solid #3498db;
+    position: relative;
 }
 
 .estimasi-card h6, .serving-card h6 {
@@ -254,12 +236,14 @@
 .estimasi-time {
     text-align: center;
     margin-bottom: 15px;
+    position: relative;
 }
 
 .time-value {
     font-size: 2.5rem;
     font-weight: bold;
     color: #3498db;
+    transition: all 0.3s ease;
 }
 
 .time-unit {
@@ -297,6 +281,25 @@
     color: #721c24;
 }
 
+.refresh-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.refresh-btn:hover {
+    background: #2980b9;
+    transform: rotate(180deg);
+}
+
 .no-antrian-card .card-content {
     text-align: center;
     padding: 30px;
@@ -310,6 +313,37 @@
 .no-antrian-card p {
     color: #7f8c8d;
     margin-bottom: 20px;
+}
+
+/* ✅ TAMBAH: Style untuk content card full width */
+.content-card.full-width {
+    grid-column: 1 / -1;
+}
+
+/* ✅ CSS ANIMATIONS */
+@keyframes fadeInOut {
+    0%, 100% { opacity: 0; transform: scale(0.8); }
+    15%, 85% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.updating {
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
 }
 
 /* ✅ RESPONSIVE */
@@ -329,84 +363,279 @@
         padding: 15px;
         min-width: 80px;
     }
-}
-
-/* Update status untuk real-time */
-.updating {
-    opacity: 0.7;
-    transition: opacity 0.3s ease;
+    
+    .refresh-btn {
+        position: static;
+        margin-top: 15px;
+        width: 100%;
+    }
 }
 </style>
 
 @if($antrianAktif && $antrianAktif->status === 'waiting')
 <script>
-// ✅ REALTIME UPDATE estimasi waktu tunggu
-let updateInterval;
-
-function updateEstimasi() {
-    const estimasiCard = document.getElementById('estimasiCard');
-    if (!estimasiCard) return;
+// ✅ REALTIME UPDATE estimasi waktu tunggu - SINGLE CLEAN VERSION
+class EstimationUpdater {
+    constructor() {
+        this.updateInterval = null;
+        this.countdownInterval = null;
+        this.lastEstimation = null;
+        this.isUpdating = false;
+        
+        this.init();
+    }
     
-    estimasiCard.classList.add('updating');
-    
-    fetch('/dashboard/realtime-estimation', {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    init() {
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.start());
+        } else {
+            this.start();
         }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            if (data.status === 'serving') {
-                // Redirect atau reload jika sudah dipanggil
-                location.reload();
-                return;
-            }
+    }
+    
+    start() {
+        // Start update interval (every 30 seconds)
+        this.updateInterval = setInterval(() => this.updateEstimasi(), 30000);
+        
+        // First update after 5 seconds
+        setTimeout(() => this.updateEstimasi(), 5000);
+        
+        // Start countdown timer after 1 second
+        setTimeout(() => this.startCountdownTimer(), 1000);
+        
+        // Setup cleanup on page unload
+        window.addEventListener('beforeunload', () => this.cleanup());
+    }
+    
+    async updateEstimasi() {
+        if (this.isUpdating) return;
+        
+        const estimasiCard = document.getElementById('estimasiCard');
+        if (!estimasiCard) return;
+        
+        this.isUpdating = true;
+        estimasiCard.classList.add('updating');
+        
+        try {
+            const response = await fetch('/dashboard/realtime-estimation', {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                }
+            });
             
-            // Update UI dengan data terbaru
-            if (data.data) {
-                document.getElementById('estimasiTime').innerHTML = 
-                    `<span class="time-value">${data.data.estimasi_menit}</span><span class="time-unit">menit</span>`;
+            const data = await response.json();
+            
+            if (data.success) {
+                if (data.status === 'serving') {
+                    this.showNotification('🔔 Antrian Anda sudah dipanggil!', 'success');
+                    setTimeout(() => location.reload(), 2000);
+                    return;
+                }
                 
-                document.getElementById('posisiAntrian').textContent = data.data.posisi;
-                document.getElementById('waktuEstimasi').textContent = data.data.waktu_estimasi;
-                document.getElementById('antrianDidepan').textContent = data.data.antrian_didepan;
-                
-                const statusElement = document.getElementById('estimasiStatus');
-                statusElement.className = `estimasi-status status-${data.data.status}`;
-                
-                if (data.data.status === 'delayed') {
-                    statusElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Terlambat dari estimasi';
-                } else {
-                    statusElement.innerHTML = '<i class="fas fa-check-circle"></i> Dalam estimasi waktu';
+                if (data.data) {
+                    this.handleEstimationUpdate(data.data);
                 }
             }
+        } catch (error) {
+            console.error('Error updating estimation:', error);
+            this.showNotification('❌ Gagal update estimasi waktu', 'error');
+        } finally {
+            this.isUpdating = false;
+            estimasiCard.classList.remove('updating');
         }
-    })
-    .catch(error => {
-        console.error('Error updating estimation:', error);
-    })
-    .finally(() => {
-        estimasiCard.classList.remove('updating');
-    });
+    }
+    
+    handleEstimationUpdate(data) {
+        const estimasiCard = document.getElementById('estimasiCard');
+        const newEstimation = data.estimasi_menit;
+        
+        // Show animation if estimation changed
+        if (this.lastEstimation !== null && this.lastEstimation !== newEstimation) {
+            this.showEstimationChange(this.lastEstimation, newEstimation);
+        }
+        
+        this.lastEstimation = newEstimation;
+        this.updateEstimationUI(data);
+        
+        // Show status change notifications
+        if (data.status === 'delayed' && !estimasiCard.dataset.wasDelayed) {
+            this.showNotification('⚠️ Estimasi waktu tunggu bertambah', 'warning');
+            estimasiCard.dataset.wasDelayed = 'true';
+        } else if (data.status === 'on_time' && estimasiCard.dataset.wasDelayed) {
+            this.showNotification('✅ Estimasi waktu kembali normal', 'success');
+            estimasiCard.dataset.wasDelayed = 'false';
+        }
+    }
+    
+    updateEstimationUI(data) {
+        // Update time with animation
+        const timeValueElement = document.querySelector('#estimasiTime .time-value');
+        if (timeValueElement) {
+            timeValueElement.style.transform = 'scale(1.1)';
+            timeValueElement.textContent = data.estimasi_menit;
+            
+            setTimeout(() => {
+                timeValueElement.style.transform = 'scale(1)';
+            }, 200);
+        }
+        
+        // Update details
+        const updates = {
+            'posisiAntrian': data.posisi,
+            'waktuEstimasi': data.waktu_estimasi,
+            'antrianDidepan': data.antrian_didepan
+        };
+        
+        Object.entries(updates).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value;
+        });
+        
+        // Update status
+        const statusElement = document.getElementById('estimasiStatus');
+        if (statusElement) {
+            statusElement.className = `estimasi-status status-${data.status}`;
+            
+            if (data.status === 'delayed') {
+                const extraDelay = data.extra_delay_minutes ? ` (+${data.extra_delay_minutes} menit)` : '';
+                statusElement.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Terlambat dari estimasi${extraDelay}`;
+            } else {
+                statusElement.innerHTML = '<i class="fas fa-check-circle"></i> Dalam estimasi waktu';
+            }
+        }
+    }
+    
+    showEstimationChange(oldValue, newValue) {
+        const timeContainer = document.getElementById('estimasiTime');
+        if (!timeContainer) return;
+        
+        const changeIndicator = document.createElement('div');
+        changeIndicator.className = 'estimation-change';
+        changeIndicator.style.cssText = `
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: ${newValue > oldValue ? '#e74c3c' : '#27ae60'};
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+            z-index: 10;
+            animation: fadeInOut 3s ease-in-out;
+        `;
+        
+        const difference = Math.abs(newValue - oldValue);
+        const sign = newValue > oldValue ? '+' : '-';
+        changeIndicator.textContent = `${sign}${difference}m`;
+        
+        timeContainer.style.position = 'relative';
+        timeContainer.appendChild(changeIndicator);
+        
+        setTimeout(() => {
+            if (changeIndicator.parentNode) {
+                changeIndicator.parentNode.removeChild(changeIndicator);
+            }
+        }, 3000);
+    }
+    
+    showNotification(message, type = 'info') {
+        // Remove existing notification
+        const existingNotification = document.querySelector('.estimation-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+        
+        const colors = {
+            'success': '#27ae60',
+            'warning': '#f39c12',
+            'error': '#e74c3c',
+            'info': '#3498db'
+        };
+        
+        const notification = document.createElement('div');
+        notification.className = `estimation-notification notification-${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${colors[type] || colors.info};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            animation: slideInRight 0.3s ease-out;
+            max-width: 300px;
+        `;
+        
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOutRight 0.3s ease-in';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 5000);
+    }
+    
+    startCountdownTimer() {
+        const timeValueElement = document.querySelector('#estimasiTime .time-value');
+        if (!timeValueElement) return;
+        
+        let currentMinutes = parseInt(timeValueElement.textContent);
+        
+        this.countdownInterval = setInterval(() => {
+            if (currentMinutes > 0) {
+                currentMinutes--;
+                timeValueElement.textContent = currentMinutes;
+                
+                if (currentMinutes <= 2) {
+                    timeValueElement.style.color = '#e74c3c';
+                    timeValueElement.style.animation = 'pulse 1s infinite';
+                } else if (currentMinutes <= 5) {
+                    timeValueElement.style.color = '#f39c12';
+                }
+            } else {
+                clearInterval(this.countdownInterval);
+                this.updateEstimasi();
+            }
+        }, 60000); // Every 1 minute
+    }
+    
+    forceRefresh() {
+        this.updateEstimasi();
+        this.showNotification('🔄 Estimasi waktu diperbarui', 'info');
+    }
+    
+    cleanup() {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+        
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+            this.countdownInterval = null;
+        }
+    }
 }
 
-// Update setiap 30 detik
-document.addEventListener('DOMContentLoaded', function() {
-    updateInterval = setInterval(updateEstimasi, 30000);
-    
-    // Update pertama setelah 5 detik
-    setTimeout(updateEstimasi, 5000);
-});
+// Initialize the updater
+const estimationUpdater = new EstimationUpdater();
 
-// Clear interval saat halaman di-unload
-window.addEventListener('beforeunload', function() {
-    if (updateInterval) {
-        clearInterval(updateInterval);
-    }
-});
+// Global function for manual refresh button
+function forceRefreshEstimation() {
+    estimationUpdater.forceRefresh();
+}
 </script>
 @endif
 @endsection
