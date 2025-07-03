@@ -115,21 +115,17 @@
                                     </div>
                                 </td>
                                 <td>
-                                    {{-- ✅ PERBAIKAN UTAMA: Tanggal & Waktu dengan 2 informasi terpisah --}}
                                     <div class="datetime-info">
-                                        {{-- Tanggal Antrian (yang dipilih user) --}}
                                         <div class="date main-date">
                                             <i class="fas fa-calendar-day"></i>
                                             {{ $antrian->tanggal_antrian ? $antrian->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}
                                         </div>
                                         
-                                        {{-- Tanggal & Jam Ambil (kapan user mengambil nomor) --}}
                                         <div class="time pickup-time">
                                             <i class="fas fa-clock"></i>
                                             Diambil: {{ $antrian->created_at ? $antrian->created_at->format('d/m/Y H:i') : '-' }}
                                         </div>
                                         
-                                        {{-- Timeline Status (jika ada) --}}
                                         @if($antrian->called_at)
                                             <div class="time called-time">
                                                 <i class="fas fa-bell"></i>
@@ -171,7 +167,6 @@
                                             <div class="doctor-name-main">
                                                 <strong>{{ $antrian->doctor_name }}</strong>
                                             </div>
-                                            {{-- Debug info hanya untuk development --}}
                                             @if(config('app.debug', false))
                                                 <div class="doctor-source">
                                                     @if($antrian->doctorSchedule)
@@ -236,7 +231,6 @@
                                     <span>{{ $antrian->poli ?? $antrian->service->name ?? '-' }}</span>
                                 </div>
                                 
-                                {{-- ✅ PERBAIKAN UTAMA: Info Tanggal di Mobile --}}
                                 <div class="info-item main-date-mobile">
                                     <i class="fas fa-calendar-day"></i>
                                     <span>
@@ -252,7 +246,6 @@
                                     </span>
                                 </div>
                                 
-                                {{-- Timeline Status Mobile --}}
                                 @if($antrian->called_at)
                                     <div class="info-item">
                                         <i class="fas fa-bell"></i>
@@ -290,9 +283,59 @@
                     @endforeach
                 </div>
 
-                <!-- Pagination -->
+                <!-- Improved Pagination -->
                 <div class="pagination-container">
-                    {{ $riwayatAntrian->appends(request()->query())->links() }}
+                    <div class="pagination-wrapper">
+                        {{-- Previous Page Link --}}
+                        @if ($riwayatAntrian->onFirstPage())
+                            <span class="pagination-btn disabled">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15,18 9,12 15,6"></polyline>
+                                </svg>
+                                <span>Previous</span>
+                            </span>
+                        @else
+                            <a href="{{ $riwayatAntrian->appends(request()->query())->previousPageUrl() }}" class="pagination-btn">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15,18 9,12 15,6"></polyline>
+                                </svg>
+                                <span>Previous</span>
+                            </a>
+                        @endif
+
+                        {{-- Page Numbers --}}
+                        <div class="pagination-numbers">
+                            @foreach ($riwayatAntrian->appends(request()->query())->getUrlRange(1, $riwayatAntrian->lastPage()) as $page => $url)
+                                @if ($page == $riwayatAntrian->currentPage())
+                                    <span class="pagination-number active">{{ $page }}</span>
+                                @else
+                                    <a href="{{ $url }}" class="pagination-number">{{ $page }}</a>
+                                @endif
+                            @endforeach
+                        </div>
+
+                        {{-- Next Page Link --}}
+                        @if ($riwayatAntrian->hasMorePages())
+                            <a href="{{ $riwayatAntrian->appends(request()->query())->nextPageUrl() }}" class="pagination-btn">
+                                <span>Next</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9,18 15,12 9,6"></polyline>
+                                </svg>
+                            </a>
+                        @else
+                            <span class="pagination-btn disabled">
+                                <span>Next</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9,18 15,12 9,6"></polyline>
+                                </svg>
+                            </span>
+                        @endif
+                    </div>
+                    
+                    {{-- Pagination Info --}}
+                    <div class="pagination-info">
+                        Showing {{ $riwayatAntrian->firstItem() }} to {{ $riwayatAntrian->lastItem() }} of {{ $riwayatAntrian->total() }} results
+                    </div>
                 </div>
 
             @else
@@ -610,7 +653,7 @@
     display: inline-block;
 }
 
-/* ✅ PERBAIKAN: Styling datetime-info dengan 2 tanggal */
+/* Datetime Info Styles */
 .datetime-info {
     min-width: 180px;
     max-width: 220px;
@@ -695,7 +738,7 @@
     border: 1px solid #dc3545;
 }
 
-/* Styling untuk info dokter */
+/* Doctor Info Styles */
 .doctor-info {
     max-width: 180px;
     font-size: 14px;
@@ -805,7 +848,6 @@
     flex: 1;
 }
 
-/* ✅ PERBAIKAN: Styling khusus untuk tanggal antrian di mobile */
 .info-item.main-date-mobile {
     background: #e3f2fd;
     padding: 12px;
@@ -826,11 +868,100 @@
     border-bottom: none;
 }
 
-/* Pagination */
+/* Improved Pagination Styles */
 .pagination-container {
-    padding: 20px 30px;
+    padding: 25px 30px;
     border-top: 1px solid #f1f3f4;
     background: #f8f9fa;
+}
+
+.pagination-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.pagination-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px solid #e9ecef;
+    background: white;
+    color: #495057;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.pagination-btn:hover:not(.disabled) {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.pagination-btn.disabled {
+    background: #f8f9fa;
+    color: #adb5bd;
+    border-color: #e9ecef;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.pagination-btn svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2;
+}
+
+.pagination-numbers {
+    display: flex;
+    gap: 4px;
+    margin: 0 12px;
+}
+
+.pagination-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #e9ecef;
+    background: white;
+    color: #495057;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.pagination-number:hover {
+    background: #e9ecef;
+    border-color: #3498db;
+    color: #3498db;
+    transform: translateY(-1px);
+}
+
+.pagination-number.active {
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    border-color: #3498db;
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.pagination-info {
+    text-align: center;
+    color: #6c757d;
+    font-size: 14px;
+    font-weight: 500;
 }
 
 /* Empty State */
@@ -904,127 +1035,6 @@
         text-align: center;
     }
 
-    .filter-options {
-        width: 100%;
-    }
-
-    .filter-chip {
-        flex: 1;
-        justify-content: center;
-        min-width: 100px;
-        font-size: 13px;
-        padding: 10px 15px;
-    }
-
-    .card-header {
-        padding: 15px 20px;
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-    }
-
-    .desktop-table {
-        display: none;
-    }
-
-    .mobile-cards {
-        display: flex;
-    }
-
-    .pagination-container {
-        padding: 15px 20px;
-    }
-
-    .empty-state {
-        padding: 40px 20px;
-    }
-
-    .empty-icon {
-        font-size: 3rem;
-    }
-
-    .empty-state h3 {
-        font-size: 1.3rem;
-    }
-}
-
-@media (max-width: 480px) {
-    .filter-chip {
-        font-size: 12px;
-        padding: 8px 12px;
-    }
-
-    .mobile-card-header {
-        padding: 12px 15px;
-    }
-
-    .mobile-card-body {
-        padding: 15px;
-    }
-
-    .info-item {
-        padding: 6px 0;
-    }
-}
-</style>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Close alert functionality
-    document.querySelectorAll('.alert-close').forEach(button => {
-        button.addEventListener('click', function() {
-            this.parentElement.style.display = 'none';
-        });
-    });
-
-    // Auto hide alerts after 5 seconds
-    document.querySelectorAll('.alert').forEach(alert => {
-        setTimeout(() => {
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 500);
-        }, 5000);
-    });
-
-    // Responsive table handling
-    function handleResponsiveTable() {
-        const table = document.querySelector('.desktop-table');
-        const mobileCards = document.querySelector('.mobile-cards');
-        
-        if (window.innerWidth <= 768) {
-            if (table) table.style.display = 'none';
-            if (mobileCards) mobileCards.style.display = 'flex';
-        } else {
-            if (table) table.style.display = 'block';
-            if (mobileCards) mobileCards.style.display = 'none';
-        }
-    }
-
-    // Initial responsive check
-    handleResponsiveTable();
-    
-    // Handle window resize
-    window.addEventListener('resize', handleResponsiveTable);
-});
-</script>
-    <style>
-
-    @media (max-width: 768px) {
-    .main-content {
-        padding: 20px 15px;
-    }
-
-    .page-header {
-        padding: 20px;
-        margin-bottom: 20px;
-    }
-
-    .page-header h1 {
-        font-size: 1.5rem;
-        flex-direction: column;
-        gap: 8px;
-        text-align: center;
-    }
-
     .filter-card {
         padding: 20px;
         margin-bottom: 20px;
@@ -1064,7 +1074,39 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     .pagination-container {
-        padding: 15px 20px;
+        padding: 20px 15px;
+    }
+
+    .pagination-wrapper {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+
+    .pagination-btn span {
+        display: none;
+    }
+
+    .pagination-numbers {
+        order: -1;
+        width: 100%;
+        justify-content: center;
+        margin: 0 0 10px 0;
+    }
+
+    .pagination-number {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+    }
+
+    .pagination-info {
+        font-size: 13px;
+        margin-top: 10px;
     }
 
     .empty-state {
@@ -1078,9 +1120,9 @@ document.addEventListener('DOMContentLoaded', function() {
     .empty-state h3 {
         font-size: 1.3rem;
     }
-    }
+}
 
-    @media (max-width: 480px) {
+@media (max-width: 480px) {
     .filter-chip {
         font-size: 12px;
         padding: 8px 12px;
@@ -1096,6 +1138,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     .info-item {
         padding: 6px 0;
+    }
+
+    .pagination-btn {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+
+    .pagination-number {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    .pagination-info {
+        font-size: 12px;
     }
 }
 </style>
@@ -1136,6 +1193,21 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle window resize
     window.addEventListener('resize', handleResponsiveTable);
+
+    // Enhanced pagination interaction
+    document.querySelectorAll('.pagination-number').forEach(link => {
+        link.addEventListener('click', function(e) {
+            // Add loading state
+            const originalText = this.textContent;
+            this.innerHTML = '<div class="spinner"></div>';
+            
+            // Reset after a short delay (will be replaced by actual page load)
+            setTimeout(() => {
+                this.textContent = originalText;
+            }, 300);
+        });
+    });
 });
 </script>
+
 @endsection
