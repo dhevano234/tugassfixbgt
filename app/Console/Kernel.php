@@ -1,5 +1,5 @@
 <?php
-// File: app/Console/Kernel.php - ADD scheduler
+// File: app/Console/Kernel.php - CORRECT AND SIMPLE VERSION
 
 namespace App\Console;
 
@@ -13,17 +13,19 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // ✅ UPDATE estimasi antrian yang sudah lewat waktu setiap 5 menit
+        // ✅ HANYA INI YANG DIPERLUKAN: Update estimasi antrian yang overdue setiap 5 menit
         $schedule->command('queue:update-overdue')
                  ->everyFiveMinutes()
                  ->between('07:00', '22:00') // Hanya jam operasional klinik
                  ->withoutOverlapping()
-                 ->runInBackground();
-
-        // ✅ LOG untuk monitoring (optional)
-        $schedule->command('queue:update-overdue')
-                 ->everyFiveMinutes()
-                 ->appendOutputTo(storage_path('logs/queue-updates.log'));
+                 ->runInBackground()
+                 ->appendOutputTo(storage_path('logs/queue-updates.log'))
+                 ->onSuccess(function () {
+                     \Illuminate\Support\Facades\Log::info('Queue overdue update completed successfully');
+                 })
+                 ->onFailure(function () {
+                     \Illuminate\Support\Facades\Log::error('Queue overdue update failed');
+                 });
     }
 
     /**

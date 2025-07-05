@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - IMPROVED VERSION
+// File: app/Services/QueueService.php - FIXED GENERATE NUMBER
 
 namespace App\Services;
 
@@ -14,13 +14,14 @@ use Carbon\Carbon;
 class QueueService
 {
     /**
-     * ✅ UPDATED: Add queue dengan estimasi waktu
+     * ✅ FIXED: Add queue dengan nomor berdasarkan tanggal_antrian
      */
-    public function addQueue($serviceId, $userId = null, $ktpData = null)
+    public function addQueue($serviceId, $userId = null, $ktpData = null, $tanggalAntrian = null)
     {
-        return DB::transaction(function () use ($serviceId, $userId, $ktpData) {
-            // Generate nomor antrian
-            $number = $this->generateNumber($serviceId);
+        return DB::transaction(function () use ($serviceId, $userId, $ktpData, $tanggalAntrian) {
+            // ✅ PERBAIKAN: Generate nomor berdasarkan tanggal_antrian
+            $tanggalAntrian = $tanggalAntrian ?? today();
+            $number = $this->generateNumberForDate($serviceId, $tanggalAntrian);
             
             // Jika ada data KTP (untuk walk-in), cari atau buat user
             if ($ktpData && isset($ktpData['nomor_ktp'])) {
@@ -31,8 +32,8 @@ class QueueService
             // Gunakan user yang sedang login jika userId tidak diberikan
             $userId = $userId ?? Auth::id();
 
-            // ✅ HITUNG ESTIMASI WAKTU TUNGGU
-            $estimatedCallTime = $this->calculateEstimatedCallTime($serviceId);
+            // ✅ HITUNG ESTIMASI berdasarkan tanggal_antrian
+            $estimatedCallTime = $this->calculateEstimatedCallTimeForDate($serviceId, $tanggalAntrian);
 
             // Buat antrian
             $queue = Queue::create([
@@ -40,64 +41,127 @@ class QueueService
                 'user_id' => $userId,
                 'number' => $number,
                 'status' => 'waiting',
+                'tanggal_antrian' => $tanggalAntrian, // ✅ SET tanggal_antrian
                 'estimated_call_time' => $estimatedCallTime,
-                'extra_delay_minutes' => 0,
+                'extra_delay_minutes' => $this->getGlobalDelayForDate($tanggalAntrian),
             ]);
 
-            // ✅ UPDATE ESTIMASI UNTUK ANTRIAN LAIN SETELAH ANTRIAN BARU
-            $this->updateEstimationsAfterNewQueue($serviceId, $queue->id);
+            // ✅ UPDATE ESTIMASI untuk antrian lain di tanggal yang sama
+            $this->updateEstimationsAfterNewQueue($serviceId, $queue->id, $tanggalAntrian);
 
             return $queue;
         });
     }
 
     /**
-     * ✅ IMPROVED: Hitung estimasi waktu panggilan berdasarkan antrian di depan
+     * ✅ NEW: Generate nomor antrian berdasarkan tanggal_antrian spesifik
      */
-    private function calculateEstimatedCallTime($serviceId)
+    public function generateNumberForDate($serviceId, $tanggalAntrian)
     {
-        // Hitung jumlah antrian yang masih menunggu di service yang sama
-        $waitingQueues = Queue::where('service_id', $serviceId)
-            ->where('status', 'waiting')
-            ->whereDate('created_at', today())
-            ->count();
+        $service = Service::findOrFail($serviceId);
 
-        // Setiap antrian butuh 15 menit, tapi antrian baru posisinya paling belakang
-        // Jadi waitingQueues + 1 karena antrian baru belum masuk hitungan
-        $estimatedMinutes = ($waitingQueues + 1) * 15;
+        // ✅ PERBAIKAN UTAMA: Cari antrian terakhir berdasarkan tanggal_antrian
+        $lastQueue = Queue::where('service_id', $serviceId)
+            ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ FIXED: tanggal_antrian
+            ->orderByDesc('id')
+            ->first();
 
-        // ✅ PERBAIKAN: Estimasi dari sekarang, bukan dari created_at
-        return now()->addMinutes($estimatedMinutes);
+        // ✅ RESET nomor untuk tanggal baru
+        $lastQueueNumber = $lastQueue ? intval(
+            substr($lastQueue->number, strlen($service->prefix))
+        ) : 0;
+
+        $newQueueNumber = $lastQueueNumber + 1;
+        $maximumNumber = pow(10, $service->padding) - 1;
+
+        // ✅ RESET ke 1 jika sudah mencapai maksimum
+        if ($newQueueNumber > $maximumNumber) {
+            $newQueueNumber = 1;
+        }
+
+        return $service->prefix . str_pad($newQueueNumber, $service->padding, "0", STR_PAD_LEFT);
     }
 
     /**
-     * ✅ IMPROVED: Update estimasi waktu untuk antrian lain setelah ada antrian baru
+     * ✅ IMPROVED: Hitung estimasi untuk tanggal spesifik
      */
-    private function updateEstimationsAfterNewQueue($serviceId, $excludeQueueId)
+    private function calculateEstimatedCallTimeForDate($serviceId, $tanggalAntrian)
+    {
+        // ✅ HITUNG HANYA antrian di tanggal yang sama
+        $waitingQueues = Queue::where('service_id', $serviceId)
+            ->where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ FIXED
+            ->count();
+
+        $queuePosition = $waitingQueues + 1;
+        $baseMinutes = $queuePosition * 15;
+
+        // ✅ TAMBAH: Global delay untuk tanggal tersebut
+        $globalDelay = $this->getGlobalDelayForDate($tanggalAntrian);
+        $totalMinutes = $baseMinutes + $globalDelay;
+
+        // ✅ ESTIMASI: Jika untuk hari ini, dari sekarang. Jika untuk masa depan, dari jam 8 pagi
+        if (Carbon::parse($tanggalAntrian)->isToday()) {
+            return now()->addMinutes($totalMinutes);
+        } else {
+            // Untuk tanggal masa depan, mulai dari jam 8 pagi
+            return Carbon::parse($tanggalAntrian)->setTime(8, 0)->addMinutes($totalMinutes);
+        }
+    }
+
+    /**
+     * ✅ NEW: Get global delay untuk tanggal tertentu
+     */
+    private function getGlobalDelayForDate($tanggalAntrian)
+    {
+        $maxDelay = Queue::where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
+            ->max('extra_delay_minutes');
+
+        return $maxDelay ?: 0;
+    }
+
+    /**
+     * ✅ FIXED: Update estimasi setelah antrian baru untuk tanggal spesifik
+     */
+    private function updateEstimationsAfterNewQueue($serviceId, $excludeQueueId, $tanggalAntrian)
     {
         $waitingQueues = Queue::where('service_id', $serviceId)
             ->where('status', 'waiting')
             ->where('id', '!=', $excludeQueueId)
-            ->whereDate('created_at', today())
+            ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ FIXED
             ->orderBy('id', 'asc')
             ->get();
 
-        $baseTime = now();
+        $globalDelay = $this->getGlobalDelayForDate($tanggalAntrian);
         
-        foreach ($waitingQueues as $index => $queue) {
-            // ✅ PERBAIKAN: Setiap antrian estimasi +15 menit dari yang sebelumnya
-            // Index dimulai dari 0, jadi antrian pertama = 15 menit
-            $estimatedTime = $baseTime->copy()->addMinutes(($index + 1) * 15);
+        foreach ($waitingQueues as $queue) {
+            // ✅ HITUNG posisi berdasarkan tanggal antrian
+            $queuePosition = Queue::where('service_id', $serviceId)
+                ->where('status', 'waiting')
+                ->where('id', '<', $queue->id)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count() + 1;
+            
+            $baseMinutes = $queuePosition * 15;
+            $totalMinutes = $baseMinutes + $globalDelay;
+            
+            // ✅ ESTIMASI berdasarkan tanggal
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $estimatedTime = now()->addMinutes($totalMinutes);
+            } else {
+                $estimatedTime = Carbon::parse($tanggalAntrian)->setTime(8, 0)->addMinutes($totalMinutes);
+            }
             
             $queue->update([
                 'estimated_call_time' => $estimatedTime,
-                'extra_delay_minutes' => 0 // Reset extra delay saat recalculate
+                'extra_delay_minutes' => $globalDelay
             ]);
         }
     }
 
     /**
-     * ✅ UPDATED: Call next queue dengan update estimasi
+     * ✅ FIXED: Call next queue - hanya untuk hari ini
      */
     public function callNextQueue($counterId)
     {
@@ -108,7 +172,7 @@ class QueueService
             ->where(function ($query) use ($counterId) {
                 $query->whereNull('counter_id')->orWhere('counter_id', $counterId);
             })
-            ->whereDate('created_at', now()->format('Y-m-d'))
+            ->whereDate('tanggal_antrian', today()) // ✅ FIXED: hanya hari ini
             ->orderBy('id')
             ->first();
 
@@ -116,55 +180,90 @@ class QueueService
             $nextQueue->update([
                 'counter_id' => $counterId,
                 'called_at' => now(),
-                'status' => 'serving' // ✅ TAMBAH INI - langsung ubah status ke serving
+                'status' => 'serving'
             ]);
 
-            // ✅ UPDATE ESTIMASI UNTUK ANTRIAN YANG TERSISA
-            $this->updateEstimationsAfterQueueCalled($counter->service_id);
+            // ✅ UPDATE ESTIMASI untuk antrian yang tersisa hari ini
+            $this->updateEstimationsAfterQueueCalled($counter->service_id, today());
         }
 
         return $nextQueue;
     }
 
     /**
-     * ✅ IMPROVED: Update estimasi setelah ada antrian yang dipanggil
+     * ✅ FIXED: Update estimasi setelah ada antrian yang dipanggil
      */
-    private function updateEstimationsAfterQueueCalled($serviceId)
+    private function updateEstimationsAfterQueueCalled($serviceId, $tanggalAntrian)
     {
         $waitingQueues = Queue::where('service_id', $serviceId)
             ->where('status', 'waiting')
-            ->whereDate('created_at', today())
+            ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ FIXED
             ->orderBy('id', 'asc')
             ->get();
 
-        $baseTime = now();
+        $globalDelay = $this->getGlobalDelayForDate($tanggalAntrian);
         
-        foreach ($waitingQueues as $index => $queue) {
-            // ✅ PERBAIKAN: Recalculate estimasi dari sekarang
-            // Semua queue maju ke depan, jadi estimasi berkurang 15 menit
-            $estimatedTime = $baseTime->copy()->addMinutes(($index + 1) * 15);
+        foreach ($waitingQueues as $queue) {
+            $queuePosition = Queue::where('service_id', $serviceId)
+                ->where('status', 'waiting')
+                ->where('id', '<', $queue->id)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count() + 1;
+            
+            $baseMinutes = $queuePosition * 15;
+            $totalMinutes = $baseMinutes + $globalDelay;
+            
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $estimatedTime = now()->addMinutes($totalMinutes);
+            } else {
+                $estimatedTime = Carbon::parse($tanggalAntrian)->setTime(8, 0)->addMinutes($totalMinutes);
+            }
             
             $queue->update([
                 'estimated_call_time' => $estimatedTime,
-                'extra_delay_minutes' => 0 // Reset extra delay
+                'extra_delay_minutes' => $globalDelay
             ]);
         }
     }
 
     /**
-     * ✅ IMPROVED: Check dan update extra delay untuk antrian yang sudah lewat estimasi
+     * ✅ IMPROVED: Update SEMUA antrian pada tanggal tertentu ketika ada delay
      */
-    public function updateOverdueQueues()
+    public function updateOverdueQueuesForDate($tanggalAntrian = null)
     {
+        $tanggalAntrian = $tanggalAntrian ?? today();
+        
         $overdueQueues = Queue::where('status', 'waiting')
-            ->whereDate('created_at', today())
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
             ->where('estimated_call_time', '<', now())
             ->get();
 
-        foreach ($overdueQueues as $queue) {
-            // ✅ PERBAIKAN: Lebih robust increment
+        if ($overdueQueues->isEmpty()) {
+            return 0;
+        }
+
+        // ✅ UPDATE SEMUA antrian di tanggal tersebut
+        $allQueuesOnDate = Queue::where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
+            ->get();
+
+        foreach ($allQueuesOnDate as $queue) {
             $newExtraDelay = $queue->extra_delay_minutes + 5;
-            $newEstimation = now()->addMinutes(5);
+            
+            $queuePosition = Queue::where('service_id', $queue->service_id)
+                ->where('status', 'waiting')
+                ->where('id', '<', $queue->id)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count() + 1;
+            
+            $baseMinutes = $queuePosition * 15;
+            $totalMinutes = $baseMinutes + $newExtraDelay;
+            
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $newEstimation = now()->addMinutes($totalMinutes - $baseMinutes + 5);
+            } else {
+                $newEstimation = Carbon::parse($tanggalAntrian)->setTime(8, 0)->addMinutes($totalMinutes);
+            }
             
             $queue->update([
                 'estimated_call_time' => $newEstimation,
@@ -172,128 +271,27 @@ class QueueService
             ]);
         }
 
-        return $overdueQueues->count();
+        return $allQueuesOnDate->count();
     }
 
     /**
-     * ✅ IMPROVED: Get real-time waiting time untuk specific queue
+     * ✅ LEGACY method untuk backward compatibility
      */
-    public function getWaitingTimeInfo($queueId)
+    public function generateNumber($serviceId)
     {
-        $queue = Queue::with(['service', 'user'])->find($queueId);
-        
-        if (!$queue || $queue->status !== 'waiting') {
-            return null;
-        }
-
-        $now = now();
-        $estimatedTime = $queue->estimated_call_time;
-        
-        if ($estimatedTime && $estimatedTime > $now) {
-            // Masih dalam estimasi
-            $waitingMinutes = $now->diffInMinutes($estimatedTime);
-            $status = 'on_time';
-        } else {
-            // Sudah lewat estimasi atau belum ada estimasi
-            $waitingMinutes = $queue->extra_delay_minutes ?: 5;
-            $status = 'delayed';
-        }
-
-        return [
-            'queue_number' => $queue->number,
-            'service_name' => $queue->service->name ?? 'Unknown',
-            'patient_name' => $queue->user->name ?? 'Walk-in',
-            'estimated_call_time' => $estimatedTime,
-            'current_waiting_minutes' => $waitingMinutes,
-            'extra_delay_minutes' => $queue->extra_delay_minutes,
-            'status' => $status,
-            'position_in_queue' => $this->getQueuePosition($queue)
-        ];
+        return $this->generateNumberForDate($serviceId, today());
     }
 
     /**
-     * ✅ IMPROVED: Get posisi antrian dalam urutan
+     * ✅ LEGACY method untuk backward compatibility
      */
-    private function getQueuePosition($queue)
+    public function updateOverdueQueues()
     {
-        return Queue::where('service_id', $queue->service_id)
-            ->where('status', 'waiting')
-            ->where('id', '<', $queue->id)
-            ->whereDate('created_at', today())
-            ->count() + 1;
+        return $this->updateOverdueQueuesForDate(today());
     }
 
-    /**
-     * ✅ NEW: Get dashboard stats untuk estimasi
-     */
-    public function getDashboardEstimationStats()
-    {
-        $today = today();
-        
-        return [
-            'total_waiting' => Queue::where('status', 'waiting')->whereDate('created_at', $today)->count(),
-            'on_time_queues' => Queue::where('status', 'waiting')
-                ->whereDate('created_at', $today)
-                ->where('estimated_call_time', '>=', now())
-                ->count(),
-            'overdue_queues' => Queue::where('status', 'waiting')
-                ->whereDate('created_at', $today)
-                ->where('estimated_call_time', '<', now())
-                ->count(),
-            'average_wait_time' => $this->calculateAverageWaitTime(),
-        ];
-    }
-
-    /**
-     * ✅ NEW: Calculate average wait time
-     */
-    private function calculateAverageWaitTime()
-    {
-        $finishedToday = Queue::where('status', 'finished')
-            ->whereDate('created_at', today())
-            ->whereNotNull('called_at')
-            ->get();
-
-        if ($finishedToday->isEmpty()) {
-            return 0;
-        }
-
-        $totalWaitMinutes = $finishedToday->sum(function ($queue) {
-            return $queue->created_at->diffInMinutes($queue->called_at);
-        });
-
-        return round($totalWaitMinutes / $finishedToday->count());
-    }
-
-    /**
-     * ✅ NEW: Reset estimasi untuk semua queue (untuk maintenance)
-     */
-    public function resetAllEstimations()
-    {
-        $waitingQueues = Queue::where('status', 'waiting')
-            ->whereDate('created_at', today())
-            ->orderBy('id', 'asc')
-            ->get();
-
-        $baseTime = now();
-        $updatedCount = 0;
-
-        foreach ($waitingQueues as $index => $queue) {
-            $estimatedTime = $baseTime->copy()->addMinutes(($index + 1) * 15);
-            
-            $queue->update([
-                'estimated_call_time' => $estimatedTime,
-                'extra_delay_minutes' => 0
-            ]);
-            
-            $updatedCount++;
-        }
-
-        return $updatedCount;
-    }
-
-    // ✅ EXISTING METHODS - tetap sama
-    public function addQueueWithKtp($serviceId, string $ktp, array $patientData = [])
+    // ✅ EXISTING METHODS dengan perbaikan minor
+    public function addQueueWithKtp($serviceId, string $ktp, array $patientData = [], $tanggalAntrian = null)
     {
         if (strlen($ktp) !== 16 || !is_numeric($ktp)) {
             throw new \InvalidArgumentException('Nomor KTP harus 16 digit angka');
@@ -309,36 +307,7 @@ class QueueService
             'birth_date' => null,
         ], $patientData);
 
-        return $this->addQueue($serviceId, null, $userData);
-    }
-
-    public function generateNumber($serviceId)
-    {
-        $service = Service::findOrFail($serviceId);
-
-        $lastQueue = Queue::where('service_id', $serviceId)
-            ->whereDate('created_at', today())
-            ->orderByDesc('id')
-            ->first();
-
-        $currentDate = now()->format('Y-m-d');
-        $lastQueueDate = $lastQueue ? $lastQueue->created_at->format('Y-m-d') : null;
-        $isSameDate = $currentDate === $lastQueueDate;
-
-        $lastQueueNumber = $lastQueue ? intval(
-            substr($lastQueue->number, strlen($service->prefix))
-        ) : 0;
-
-        $maximumNumber = pow(10, $service->padding) - 1;
-        $isMaximumNumber = $lastQueueNumber === $maximumNumber;
-
-        if ($isSameDate && !$isMaximumNumber) {
-            $newQueueNumber = $lastQueueNumber + 1;
-        } else {
-            $newQueueNumber = 1;
-        }
-
-        return $service->prefix . str_pad($newQueueNumber, $service->padding, "0", STR_PAD_LEFT);
+        return $this->addQueue($serviceId, null, $userData, $tanggalAntrian);
     }
 
     public function serveQueue(Queue $queue)
@@ -376,34 +345,10 @@ class QueueService
             'canceled_at' => now()
         ]);
         
-        // ✅ TAMBAH: Update estimasi queue lain setelah ada yang cancel
+        // ✅ UPDATE estimasi queue lain setelah ada yang cancel
         if ($queue->status === 'waiting') {
-            $this->updateEstimationsAfterQueueCalled($queue->service_id);
+            $this->updateEstimationsAfterQueueCalled($queue->service_id, $queue->tanggal_antrian);
         }
-    }
-
-    public function getQueueStatsByMRN(string $medicalRecordNumber): array
-    {
-        $user = User::where('medical_record_number', $medicalRecordNumber)->first();
-        
-        if (!$user) {
-            return [
-                'total_queues' => 0,
-                'finished' => 0,
-                'canceled' => 0,
-                'user' => null,
-            ];
-        }
-
-        $queues = $user->queues();
-
-        return [
-            'total_queues' => $queues->count(),
-            'finished' => $queues->where('status', 'finished')->count(),
-            'canceled' => $queues->where('status', 'canceled')->count(),
-            'last_visit' => $queues->latest()->first()?->created_at,
-            'user' => $user,
-        ];
     }
 
     public function searchUserByIdentifier(string $identifier): ?User
@@ -415,5 +360,43 @@ class QueueService
         }
         
         return $user;
+    }
+
+    /**
+     * ✅ NEW: Reset estimasi untuk tanggal tertentu
+     */
+    public function resetEstimationsForDate($tanggalAntrian)
+    {
+        $waitingQueues = Queue::where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $updatedCount = 0;
+
+        foreach ($waitingQueues as $queue) {
+            $queuePosition = Queue::where('service_id', $queue->service_id)
+                ->where('status', 'waiting')
+                ->where('id', '<', $queue->id)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count() + 1;
+            
+            $baseMinutes = $queuePosition * 15;
+            
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $estimatedTime = now()->addMinutes($baseMinutes);
+            } else {
+                $estimatedTime = Carbon::parse($tanggalAntrian)->setTime(8, 0)->addMinutes($baseMinutes);
+            }
+            
+            $queue->update([
+                'estimated_call_time' => $estimatedTime,
+                'extra_delay_minutes' => 0
+            ]);
+            
+            $updatedCount++;
+        }
+
+        return $updatedCount;
     }
 }

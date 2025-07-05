@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Pages/QueueKiosk.php - UPDATED dengan KTP input
+// File: app/Filament/Pages/QueueKiosk.php - FIXED NOMOR PER TANGGAL
 
 namespace App\Filament\Pages;
 
@@ -12,8 +12,10 @@ use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Form;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class QueueKiosk extends Page implements HasForms
 {
@@ -30,6 +32,7 @@ class QueueKiosk extends Page implements HasForms
     public $nomor_ktp = '';
     public $name = '';
     public $phone = '';
+    public $tanggal_antrian = null; // ✅ TAMBAH tanggal antrian
     public $showKtpForm = false;
 
     protected ThermalPrinterService $thermalPrinterService;
@@ -42,12 +45,29 @@ class QueueKiosk extends Page implements HasForms
     }
 
     /**
-     * ✅ FORM untuk input KTP dan data pasien
+     * ✅ FORM untuk input KTP, data pasien, dan tanggal antrian
      */
     public function form(Form $form): Form
     {
         return $form
             ->schema([
+                DatePicker::make('tanggal_antrian')
+                    ->label('Tanggal Antrian')
+                    ->required()
+                    ->native(false)
+                    ->displayFormat('d/m/Y')
+                    ->minDate(today())
+                    ->maxDate(today()->addDays(30))
+                    ->default(today())
+                    ->helperText('Pilih tanggal untuk antrian Anda')
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        // Update preview nomor antrian ketika tanggal berubah
+                        if ($state && $this->service_id) {
+                            $this->updateQueueNumberPreview($this->service_id, $state);
+                        }
+                    }),
+
                 TextInput::make('nomor_ktp')
                     ->label('Nomor KTP')
                     ->required()
@@ -102,30 +122,65 @@ class QueueKiosk extends Page implements HasForms
     }
 
     /**
-     * ✅ SHOW form untuk input KTP
+     * ✅ SHOW form untuk input KTP dengan tanggal antrian
      */
     public function showKtpInput($serviceId)
     {
         $this->service_id = $serviceId;
         $this->showKtpForm = true;
         $this->data = [
+            'tanggal_antrian' => today()->format('Y-m-d'),
             'nomor_ktp' => '',
             'name' => '',
             'phone' => '',
         ];
+
+        // ✅ PREVIEW nomor antrian untuk hari ini
+        $this->updateQueueNumberPreview($serviceId, today());
     }
 
     /**
-     * ✅ SUBMIT form dan buat antrian
+     * ✅ NEW: Update preview nomor antrian
+     */
+    public function updateQueueNumberPreview($serviceId, $tanggalAntrian): void
+    {
+        try {
+            $previewNumber = $this->queueService->generateNumberForDate($serviceId, $tanggalAntrian);
+            $service = Service::find($serviceId);
+            
+            $currentQueues = \App\Models\Queue::where('service_id', $serviceId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count();
+            
+            $position = $currentQueues + 1;
+            $tanggalFormatted = Carbon::parse($tanggalAntrian)->format('d F Y');
+            
+            Notification::make()
+                ->title('Preview Nomor Antrian')
+                ->body("Nomor: {$previewNumber} | Posisi: {$position} | Tanggal: {$tanggalFormatted}")
+                ->info()
+                ->duration(5000)
+                ->send();
+                
+        } catch (\Exception $e) {
+            // Silent error, tidak mengganggu UX
+        }
+    }
+
+    /**
+     * ✅ SUBMIT form dan buat antrian dengan tanggal yang dipilih
      */
     public function submit()
     {
         // Validasi form data
         $validator = Validator::make($this->data, [
+            'tanggal_antrian' => 'required|date|after_or_equal:today',
             'nomor_ktp' => 'required|digits:16',
             'name' => 'required|string|max:255',
             'phone' => 'nullable|string|max:15',
         ], [
+            'tanggal_antrian.required' => 'Tanggal antrian harus dipilih',
+            'tanggal_antrian.after_or_equal' => 'Tanggal antrian tidak boleh lebih awal dari hari ini',
             'nomor_ktp.required' => 'Nomor KTP harus diisi',
             'nomor_ktp.digits' => 'Nomor KTP harus 16 digit',
             'name.required' => 'Nama harus diisi',
@@ -153,28 +208,62 @@ class QueueKiosk extends Page implements HasForms
         }
 
         try {
-            // Buat antrian dengan data KTP
+            $tanggalAntrian = $this->data['tanggal_antrian'];
+            
+            // ✅ CEK: Apakah user sudah punya antrian di tanggal tersebut
+            $existingUser = $this->queueService->searchUserByIdentifier($this->data['nomor_ktp']);
+            if ($existingUser) {
+                $existingQueue = \App\Models\Queue::where('user_id', $existingUser->id)
+                    ->whereIn('status', ['waiting', 'serving'])
+                    ->whereDate('tanggal_antrian', $tanggalAntrian)
+                    ->first();
+                    
+                if ($existingQueue) {
+                    Notification::make()
+                        ->title('Antrian Sudah Ada')
+                        ->body("Anda sudah memiliki antrian #{$existingQueue->number} pada tanggal " . Carbon::parse($tanggalAntrian)->format('d F Y'))
+                        ->warning()
+                        ->duration(8000)
+                        ->send();
+                    return;
+                }
+            }
+
+            // ✅ PERBAIKAN UTAMA: Buat antrian dengan tanggal_antrian
             $newQueue = $this->queueService->addQueueWithKtp(
                 $this->service_id,
                 $this->data['nomor_ktp'],
                 [
                     'name' => $this->data['name'],
                     'phone' => $this->data['phone'],
-                ]
+                ],
+                $tanggalAntrian // ✅ TAMBAH tanggal antrian
             );
 
             $service = $newQueue->service;
             $user = $newQueue->user;
+            $tanggalFormatted = Carbon::parse($tanggalAntrian)->format('d F Y');
 
-            // Notification sukses
+            // Notification sukses dengan info tanggal
+            $successMessage = "Antrian berhasil dibuat!";
+            $successMessage .= "\nNomor: {$newQueue->number}";
+            $successMessage .= "\nTanggal: {$tanggalFormatted}";
+            $successMessage .= "\nNo. RM: {$user->medical_record_number}";
+            
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $successMessage .= "\n⏰ Untuk hari ini";
+            } else {
+                $successMessage .= "\n📅 Untuk tanggal {$tanggalFormatted}";
+            }
+
             Notification::make()
                 ->title('Antrian Berhasil Dibuat!')
-                ->body("Nomor Antrian: {$newQueue->number} | No. RM: {$user->medical_record_number}")
+                ->body($successMessage)
                 ->success()
                 ->duration(10000)
                 ->send();
 
-            // Print ticket
+            // Print ticket dengan info tanggal
             $this->printTicket($newQueue);
 
             // Reset form
@@ -191,12 +280,13 @@ class QueueKiosk extends Page implements HasForms
     }
 
     /**
-     * ✅ PRINT ticket thermal
+     * ✅ PRINT ticket thermal dengan info tanggal antrian
      */
     private function printTicket($queue)
     {
         $user = $queue->user;
         $service = $queue->service;
+        $tanggalAntrian = Carbon::parse($queue->tanggal_antrian);
 
         $text = $this->thermalPrinterService->createText([
             ['text' => 'Klinik Pratama Hadiana Sehat', 'align' => 'center'],
@@ -209,9 +299,14 @@ class QueueKiosk extends Page implements HasForms
             ['text' => 'Pasien: ' . $user->name, 'align' => 'center'],
             ['text' => 'No. RM: ' . $user->medical_record_number, 'align' => 'center'],
             ['text' => '-----------------', 'align' => 'center'],
-            ['text' => $queue->created_at->format('d-M-Y H:i'), 'align' => 'center'],
+            ['text' => 'TANGGAL ANTRIAN:', 'align' => 'center'],
+            ['text' => $tanggalAntrian->format('d F Y'), 'align' => 'center', 'style' => 'double'],
+            ['text' => $tanggalAntrian->isToday() ? '(HARI INI)' : '(' . $tanggalAntrian->diffForHumans() . ')', 'align' => 'center'],
             ['text' => '-----------------', 'align' => 'center'],
-            ['text' => 'Mohon menunggu panggilan', 'align' => 'center'],
+            ['text' => 'Diambil: ' . $queue->created_at->format('d-M-Y H:i'), 'align' => 'center'],
+            ['text' => '-----------------', 'align' => 'center'],
+            ['text' => 'Mohon hadir sesuai tanggal', 'align' => 'center'],
+            ['text' => 'antrian yang tertera', 'align' => 'center'],
             ['text' => 'Terima kasih', 'align' => 'center']
         ]);
 
@@ -225,6 +320,7 @@ class QueueKiosk extends Page implements HasForms
     {
         $this->showKtpForm = false;
         $this->service_id = null;
+        $this->tanggal_antrian = null;
         $this->data = [];
         $this->form->fill([]);
     }
@@ -245,5 +341,36 @@ class QueueKiosk extends Page implements HasForms
             'showKtpForm' => $this->showKtpForm,
             'selectedService' => $this->service_id ? Service::find($this->service_id) : null,
         ];
+    }
+
+    /**
+     * ✅ NEW: Method untuk cek slot tersedia per tanggal
+     */
+    public function checkAvailableSlots($serviceId, $tanggalAntrian)
+    {
+        try {
+            $service = Service::find($serviceId);
+            $existingQueues = \App\Models\Queue::where('service_id', $serviceId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count();
+            
+            $maxSlots = pow(10, $service->padding) - 1;
+            $availableSlots = max(0, $maxSlots - $existingQueues);
+            
+            if ($availableSlots <= 0) {
+                Notification::make()
+                    ->title('Slot Penuh')
+                    ->body("Antrian untuk {$service->name} pada tanggal " . Carbon::parse($tanggalAntrian)->format('d F Y') . " sudah penuh")
+                    ->warning()
+                    ->duration(5000)
+                    ->send();
+                return false;
+            }
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 }

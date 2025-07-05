@@ -1,5 +1,5 @@
 <?php
-// File: app/Models/Queue.php - FINAL VERSION
+// File: app/Models/Queue.php - FINAL CORRECTED VERSION
 
 namespace App\Models;
 
@@ -226,10 +226,10 @@ class Queue extends Model
         return $timeline;
     }
 
-    // ✅ ESTIMASI WAKTU TUNGGU ACCESSORS - FINAL VERSION
+    // ✅ ESTIMASI WAKTU TUNGGU ACCESSORS - FINAL CORRECTED VERSION
     
     /**
-     * ✅ Get estimasi waktu tunggu dalam menit (INTEGER BERSIH)
+     * ✅ FIXED: Get estimasi waktu tunggu berdasarkan tanggal_antrian
      */
     public function getEstimasiTungguAttribute(): ?int
     {
@@ -245,18 +245,18 @@ class Queue extends Model
             if ($estimatedTime > $now) {
                 // Masih dalam estimasi normal
                 $diffMinutes = $now->diffInMinutes($estimatedTime);
-                return (int) round($diffMinutes); // ✅ INTEGER BERSIH
+                return (int) round($diffMinutes);
             } else {
                 // Sudah lewat estimasi, pakai extra delay
                 return (int) ($this->extra_delay_minutes ?: 5);
             }
         }
         
-        // ✅ FALLBACK: Kalau belum ada estimated_call_time, hitung manual
+        // ✅ FIXED FALLBACK: Berdasarkan tanggal_antrian, BUKAN created_at
         $antrianDidepan = self::where('service_id', $this->service_id)
             ->where('status', 'waiting')
             ->where('id', '<', $this->id)
-            ->whereDate('created_at', today())
+            ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today()) // ✅ FIXED
             ->count();
         
         return ($antrianDidepan + 1) * 15; // 15 menit per antrian
@@ -271,7 +271,7 @@ class Queue extends Model
             return null;
         }
 
-        $estimasiMenit = $this->estimasi_tunggu; // Pakai accessor yang sudah diperbaiki
+        $estimasiMenit = $this->estimasi_tunggu;
         
         if ($estimasiMenit < 1) {
             return "Segera dipanggil";
@@ -294,7 +294,7 @@ class Queue extends Model
         }
 
         if (!$this->estimated_call_time) {
-            return 'on_time'; // Default jika belum ada estimasi
+            return 'on_time';
         }
 
         $now = now();
@@ -304,14 +304,14 @@ class Queue extends Model
     }
 
     /**
-     * ✅ Get posisi dalam antrian
+     * ✅ FIXED: Get posisi dalam antrian berdasarkan tanggal_antrian
      */
     public function getQueuePositionAttribute(): int
     {
         return self::where('service_id', $this->service_id)
             ->where('status', 'waiting')
             ->where('id', '<', $this->id)
-            ->whereDate('created_at', today())
+            ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today()) // ✅ FIXED
             ->count() + 1;
     }
 
@@ -375,10 +375,10 @@ class Queue extends Model
         return in_array($this->status, ['waiting', 'serving']);
     }
 
-    // ✅ SCOPE METHODS
+    // ✅ SCOPE METHODS - FIXED untuk tanggal_antrian
     public function scopeToday($query)
     {
-        return $query->whereDate('created_at', today());
+        return $query->whereDate('tanggal_antrian', today()); // ✅ FIXED: tanggal_antrian
     }
 
     public function scopeForUser($query, $userId)
@@ -433,5 +433,22 @@ class Queue extends Model
     {
         return $query->where('status', 'waiting')
                     ->where('estimated_call_time', '>=', now());
+    }
+
+    // ✅ NEW SCOPES untuk tanggal_antrian
+    public function scopeForDate($query, $date)
+    {
+        return $query->whereDate('tanggal_antrian', $date);
+    }
+
+    public function scopeWaitingOnDate($query, $date)
+    {
+        return $query->where('status', 'waiting')
+                    ->whereDate('tanggal_antrian', $date);
+    }
+
+    public function scopeTodayQueues($query)
+    {
+        return $query->whereDate('tanggal_antrian', today());
     }
 }

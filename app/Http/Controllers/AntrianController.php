@@ -1,4 +1,5 @@
 <?php
+// File: app/Http/Controllers/AntrianController.php - FIXED ERRORS
 
 namespace App\Http\Controllers;
 
@@ -6,6 +7,7 @@ use App\Models\Queue;
 use App\Models\Service; 
 use App\Models\User;
 use App\Models\DoctorSchedule;
+use App\Services\QueueService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +15,13 @@ use Carbon\Carbon;
 
 class AntrianController extends Controller
 {
+    protected QueueService $queueService;
+
+    public function __construct(QueueService $queueService)
+    {
+        $this->queueService = $queueService;
+    }
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -30,10 +39,10 @@ class AntrianController extends Controller
     {
         $user = Auth::user();
         
-        // ✅ UBAH: Cek berdasarkan tanggal_antrian hari ini
+        // ✅ PERBAIKAN: Cek antrian aktif berdasarkan tanggal_antrian hari ini
         $existingQueue = Queue::where('user_id', $user->id)
                              ->whereIn('status', ['waiting', 'serving'])
-                             ->whereDate('tanggal_antrian', today()) // ✅ UBAH INI
+                             ->whereDate('tanggal_antrian', today())
                              ->first();
 
         if ($existingQueue) {
@@ -57,36 +66,34 @@ class AntrianController extends Controller
     }
 
     /**
-     * ✅ PERBAIKAN: Store dengan pisahkan tanggal antrian dan tanggal ambil + KELUHAN
+     * ✅ FIXED: Store dengan QueueService yang mendukung tanggal_antrian
      */
     public function store(Request $request)
     {
         $request->validate([
             'service_id' => 'required|exists:services,id',
             'doctor_id' => 'nullable|exists:doctor_schedules,id',
-            'tanggal' => 'required|date',
-            'chief_complaint' => 'nullable|string|max:1000', // ✅ TAMBAH VALIDASI KELUHAN
+            'tanggal' => 'required|date|after_or_equal:today',
+            'chief_complaint' => 'nullable|string|max:1000',
         ], [
             'service_id.required' => 'Layanan harus dipilih',
             'doctor_id.exists' => 'Dokter yang dipilih tidak valid',
             'tanggal.required' => 'Tanggal antrian harus dipilih',
             'tanggal.date' => 'Format tanggal tidak valid',
-            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter', // ✅ TAMBAH INI
+            'tanggal.after_or_equal' => 'Tanggal antrian tidak boleh lebih awal dari hari ini',
+            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter',
         ]);
 
         try {
             DB::beginTransaction();
 
             $user = Auth::user();
-            
-            // ✅ PERBAIKAN: Pisahkan tanggal antrian dan tanggal ambil
-            $tanggalAntrian = $request->tanggal; // Yang dipilih di date picker (misal: 2025-07-01)
-            $tanggalAmbil = now(); // Kapan user mengambil nomor (sekarang: 2025-06-30 13:10)
+            $tanggalAntrian = Carbon::parse($request->tanggal)->format('Y-m-d');
 
-            // ✅ UBAH: Cek berdasarkan tanggal_antrian, bukan created_at
+            // ✅ PERBAIKAN: Cek berdasarkan tanggal_antrian
             $existingQueue = Queue::where('user_id', $user->id)
                                  ->whereIn('status', ['waiting', 'serving'])
-                                 ->whereDate('tanggal_antrian', $tanggalAntrian) // ✅ UBAH INI
+                                 ->whereDate('tanggal_antrian', $tanggalAntrian)
                                  ->first();
 
             if ($existingQueue) {
@@ -96,38 +103,43 @@ class AntrianController extends Controller
                 ])->withInput();
             }
 
-            // ✅ UBAH: Generate nomor berdasarkan tanggal_antrian
-            $queueNumber = $this->generateQueueNumber($request->service_id, $tanggalAntrian);
+            // ✅ FIXED: Gunakan method yang ada di QueueService
+            $queue = $this->queueService->addQueue(
+                $request->service_id, 
+                $user->id, 
+                null, // ktpData
+                $tanggalAntrian // tanggal_antrian
+            );
 
-            // ✅ UBAH: Buat antrian dengan tanggal_antrian + KELUHAN
-            $queue = Queue::create([
-                'service_id' => $request->service_id,
-                'user_id' => $user->id,
+            // ✅ UPDATE: Set data tambahan setelah queue dibuat
+            $queue->update([
                 'doctor_id' => $request->doctor_id,
-                'number' => $queueNumber,
-                'status' => 'waiting',
-                'tanggal_antrian' => $tanggalAntrian,  // ✅ TAMBAH INI - Tanggal yang dipilih
-                'chief_complaint' => $request->chief_complaint, // ✅ TAMBAH INI - Keluhan dari form
-                'created_at' => $tanggalAmbil,         // ✅ UBAH INI - Kapan ambil nomor
-                'updated_at' => $tanggalAmbil,
+                'chief_complaint' => $request->chief_complaint,
             ]);
 
             DB::commit();
 
-            $message = 'Antrian berhasil dibuat untuk tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y') . '! Nomor antrian Anda: ' . $queueNumber;
+            // ✅ INFO: Nomor antrian sudah benar per tanggal
+            $message = 'Antrian berhasil dibuat untuk tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y') . '! Nomor antrian Anda: ' . $queue->number;
             
-            // ✅ TAMBAH INFO KELUHAN JIKA ADA
+            // ✅ TAMBAH INFO: Tampilkan info nomor antrian per tanggal
+            if (Carbon::parse($tanggalAntrian)->isToday()) {
+                $message .= ' (hari ini)';
+            } else {
+                $message .= ' (untuk tanggal ' . Carbon::parse($tanggalAntrian)->format('d F Y') . ')';
+            }
+            
             if (!empty($request->chief_complaint)) {
                 $shortComplaint = strlen($request->chief_complaint) > 50 
                     ? substr($request->chief_complaint, 0, 50) . '...'
                     : $request->chief_complaint;
-                $message .= ' (Keluhan: ' . $shortComplaint . ')';
+                $message .= ' | Keluhan: ' . $shortComplaint;
             }
             
             if ($request->doctor_id) {
                 $doctorSchedule = DoctorSchedule::find($request->doctor_id);
                 if ($doctorSchedule) {
-                    $message .= ' dengan ' . $doctorSchedule->doctor_name;
+                    $message .= ' | Dokter: ' . $doctorSchedule->doctor_name;
                 }
             }
 
@@ -195,9 +207,9 @@ class AntrianController extends Controller
         $request->validate([
             'service_id' => 'required|exists:services,id',
             'doctor_id' => 'nullable|exists:doctor_schedules,id',
-            'chief_complaint' => 'nullable|string|max:1000', // ✅ TAMBAH VALIDASI KELUHAN
+            'chief_complaint' => 'nullable|string|max:1000',
         ], [
-            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter', // ✅ TAMBAH INI
+            'chief_complaint.max' => 'Keluhan maksimal 1000 karakter',
         ]);
 
         try {
@@ -206,26 +218,25 @@ class AntrianController extends Controller
             $updateData = [
                 'service_id' => $request->service_id,
                 'doctor_id' => $request->doctor_id,
-                'chief_complaint' => $request->chief_complaint, // ✅ TAMBAH INI - Update keluhan
+                'chief_complaint' => $request->chief_complaint,
             ];
             
-            // ✅ UBAH: Generate nomor baru berdasarkan tanggal_antrian
+            // ✅ FIXED: Generate nomor baru berdasarkan tanggal_antrian jika ganti service
             if ($queue->service_id != $request->service_id) {
-                $tanggalAntrian = $queue->tanggal_antrian; // ✅ UBAH INI
-                $updateData['number'] = $this->generateQueueNumber($request->service_id, $tanggalAntrian);
+                $tanggalAntrian = $queue->tanggal_antrian;
+                $updateData['number'] = $this->queueService->generateNumberForDate($request->service_id, $tanggalAntrian);
             }
 
             $queue->update($updateData);
             DB::commit();
 
-            $message = 'Antrian berhasil diubah!';
+            $message = 'Antrian berhasil diubah! Nomor: ' . $queue->number;
             
-            // ✅ TAMBAH INFO KELUHAN JIKA DIUPDATE
             if ($request->filled('chief_complaint')) {
                 $shortComplaint = strlen($request->chief_complaint) > 50 
                     ? substr($request->chief_complaint, 0, 50) . '...'
                     : $request->chief_complaint;
-                $message .= ' (Keluhan: ' . $shortComplaint . ')';
+                $message .= ' | Keluhan: ' . $shortComplaint;
             }
 
             return redirect()->route('antrian.index')->with('success', $message);
@@ -276,28 +287,86 @@ class AntrianController extends Controller
     }
 
     /**
-     * ✅ UBAH: Generate nomor berdasarkan tanggal_antrian
+     * ✅ FIXED: API untuk preview nomor antrian sebelum submit
      */
-    private function generateQueueNumber($serviceId, $tanggalAntrian)
+    public function previewQueueNumber(Request $request)
     {
-        $service = Service::findOrFail($serviceId);
-        
-        // Pastikan format tanggal konsisten
-        if ($tanggalAntrian instanceof Carbon) {
-            $dateString = $tanggalAntrian->format('Y-m-d');
-        } else {
-            $dateString = $tanggalAntrian; // Sudah string Y-m-d
+        $request->validate([
+            'service_id' => 'required|exists:services,id',
+            'tanggal' => 'required|date|after_or_equal:today',
+        ]);
+
+        try {
+            $serviceId = $request->service_id;
+            $tanggalAntrian = Carbon::parse($request->tanggal)->format('Y-m-d');
+            
+            // Preview nomor antrian yang akan didapat
+            $previewNumber = $this->queueService->generateNumberForDate($serviceId, $tanggalAntrian);
+            
+            // Hitung posisi dalam antrian
+            $currentQueues = Queue::where('service_id', $serviceId)
+                ->where('status', 'waiting')
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count();
+            
+            $position = $currentQueues + 1;
+            $service = Service::find($serviceId);
+            
+            return response()->json([
+                'success' => true,
+                'preview_number' => $previewNumber,
+                'position' => $position,
+                'service_name' => $service->name,
+                'date' => Carbon::parse($tanggalAntrian)->format('d F Y'),
+                'estimated_time' => $position * 15, // menit
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
         }
-        
-        // ✅ UBAH: Query berdasarkan tanggal_antrian, bukan created_at
-        $lastQueue = Queue::where('service_id', $serviceId)
-                         ->whereDate('tanggal_antrian', $dateString) // ✅ UBAH INI
-                         ->orderBy('id', 'desc')
-                         ->first();
-        
-        $sequence = $lastQueue ? 
-                   (int) substr($lastQueue->number, strlen($service->prefix)) + 1 : 1;
-        
-        return $service->prefix . sprintf('%0' . $service->padding . 'd', $sequence);
+    }
+
+    /**
+     * ✅ FIXED: API untuk cek available slots per tanggal
+     */
+    public function checkAvailableSlots(Request $request)
+    {
+        $request->validate([
+            'service_id' => 'required|exists:services,id',
+            'tanggal' => 'required|date|after_or_equal:today',
+        ]);
+
+        try {
+            $serviceId = $request->service_id;
+            $tanggalAntrian = Carbon::parse($request->tanggal)->format('Y-m-d');
+            
+            // Hitung antrian yang sudah ada
+            $existingQueues = Queue::where('service_id', $serviceId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->count();
+            
+            $service = Service::find($serviceId);
+            $maxSlots = pow(10, $service->padding) - 1; // Maksimal slot berdasarkan padding
+            $availableSlots = max(0, $maxSlots - $existingQueues);
+            
+            return response()->json([
+                'success' => true,
+                'existing_queues' => $existingQueues,
+                'available_slots' => $availableSlots,
+                'max_slots' => $maxSlots,
+                'service_name' => $service->name,
+                'date' => Carbon::parse($tanggalAntrian)->format('d F Y'),
+                'is_full' => $availableSlots <= 0,
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
