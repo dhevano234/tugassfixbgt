@@ -96,10 +96,10 @@
                     {{-- ✅ PERBAIKAN WAKTU: Tambahkan jam ambil antrian --}}
                     <div class="time-info">
                         <div class="date-info">
-                            <small><i class="fas fa-calendar"></i> Diambil: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('d F Y') }}</small>
+                            <small><i class="fas fa-calendar"></i> Tanggal Input: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('d F Y') }}</small>
                         </div>
                         <div class="time-detail">
-                            <small><i class="fas fa-clock"></i> Jam Ambil: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
+                            <small><i class="fas fa-clock"></i> Jam Input: {{ $antrianTerbaru->created_at->setTimezone('Asia/Jakarta')->format('H:i') }} WIB</small>
                         </div>
                         {{-- Tampilkan waktu dipanggil jika ada --}}
                         @if($antrianTerbaru->called_at)

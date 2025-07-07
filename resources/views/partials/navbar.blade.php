@@ -466,7 +466,7 @@ body {
             <li class="nav-item">
                 <a href="/antrian" class="nav-link">
                     <i class="fas fa-plus-circle"></i>
-                    Buat Antrian
+                    Buat Kunjungan
                 </a>
             </li>
             <li class="nav-item">
