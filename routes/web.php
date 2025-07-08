@@ -45,6 +45,21 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
     // ✅ NEW: API untuk realtime estimation
     Route::get('/dashboard/realtime-estimation', [DashboardController::class, 'getRealtimeEstimation'])->name('dashboard.realtime-estimation');
 
+    // ✅ NEW: Session-related API routes
+    Route::prefix('api/antrian')->name('api.antrian.')->group(function () {
+        Route::get('/available-sessions', [AntrianController::class, 'getAvailableSessions'])
+             ->name('available-sessions');
+        
+        Route::post('/validate-doctor-session', [AntrianController::class, 'validateDoctorSession'])
+             ->name('validate-doctor-session');
+        
+        Route::get('/preview-queue-number', [AntrianController::class, 'previewQueueNumber'])
+             ->name('preview-queue-number');
+        
+        Route::get('/check-available-slots', [AntrianController::class, 'checkAvailableSlots'])
+             ->name('check-available-slots');
+    });
+
     // Profile Routes
     Route::get('/editprofile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -53,7 +68,7 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
     // Riwayat Pasien Routes
     Route::prefix('riwayatkunjungan')->name('riwayat.')->controller(RiwayatController::class)->group(function () {
         Route::get('/', 'index')->name('index');
-        Route::get('/export', 'export')->name('export');
+        Route::get('/export', 'export')->name('statistics');
         Route::get('/statistics', 'statistics')->name('statistics');
         Route::get('/{queue}', 'show')->name('show');
     });

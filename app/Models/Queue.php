@@ -1,5 +1,5 @@
 <?php
-// File: app/Models/Queue.php - FINAL CORRECTED VERSION
+// File: app/Models/Queue.php - UPDATED dengan Session Support
 
 namespace App\Models;
 
@@ -226,10 +226,107 @@ class Queue extends Model
         return $timeline;
     }
 
-    // ✅ ESTIMASI WAKTU TUNGGU ACCESSORS - FINAL CORRECTED VERSION
+    // ✅ NEW: SESSION SUPPORT METHODS
+
+    /**
+     * Generate session identifier berdasarkan dokter, tanggal, dan waktu mulai
+     */
+    public static function generateSessionIdentifier($doctorId, $tanggalAntrian): ?string
+    {
+        $doctor = \App\Models\DoctorSchedule::find($doctorId);
+        if (!$doctor) {
+            return null;
+        }
+        
+        $date = is_string($tanggalAntrian) ? $tanggalAntrian : $tanggalAntrian->format('Y-m-d');
+        $startTime = $doctor->start_time->format('Hi'); // Format: 0800, 1400, etc.
+        
+        return strtoupper(str_replace([' ', '.', 'dr.', 'dr '], ['_', '', '', ''], $doctor->doctor_name)) . 
+               '-' . $date . 
+               '-' . $startTime;
+    }
+
+    /**
+     * Get session identifier untuk queue ini
+     */
+    public function getSessionIdentifierAttribute(): ?string
+    {
+        if (!$this->doctor_id || !$this->tanggal_antrian) {
+            return null;
+        }
+        
+        return self::generateSessionIdentifier($this->doctor_id, $this->tanggal_antrian);
+    }
+
+    /**
+     * Get posisi dalam session dokter tertentu
+     */
+    public function getSessionQueuePositionAttribute(): int
+    {
+        if (!$this->doctor_id) {
+            // Fallback ke sistem lama berdasarkan service + tanggal
+            return self::where('service_id', $this->service_id)
+                ->where('status', 'waiting')
+                ->where('id', '<', $this->id)
+                ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today())
+                ->whereNull('doctor_id')
+                ->count() + 1;
+        }
+        
+        // Hitung posisi dalam session dokter
+        return self::where('doctor_id', $this->doctor_id)
+            ->where('status', 'waiting')
+            ->where('id', '<', $this->id)
+            ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today())
+            ->count() + 1;
+    }
+
+    /**
+     * Get informasi session dokter
+     */
+    public function getDoctorSessionInfoAttribute(): ?array
+    {
+        if (!$this->doctor_id || !$this->doctorSchedule) {
+            return null;
+        }
+        
+        return [
+            'doctor_name' => $this->doctorSchedule->doctor_name,
+            'start_time' => $this->doctorSchedule->start_time->format('H:i'),
+            'end_time' => $this->doctorSchedule->end_time->format('H:i'),
+            'session_identifier' => $this->session_identifier,
+            'is_active' => $this->isDoctorSessionActive()
+        ];
+    }
+
+    /**
+     * Check apakah session dokter masih aktif
+     */
+    public function isDoctorSessionActive(): bool
+    {
+        if (!$this->doctor_id || !$this->doctorSchedule || !$this->tanggal_antrian) {
+            return false;
+        }
+        
+        $sessionDate = $this->tanggal_antrian;
+        $doctor = $this->doctorSchedule;
+        
+        // Jika bukan hari ini, bisa booking untuk masa depan
+        if (!$sessionDate->isToday()) {
+            return $sessionDate->isFuture();
+        }
+        
+        // Jika hari ini, cek apakah session masih berlangsung
+        $currentTime = now()->format('H:i');
+        $sessionEndTime = $doctor->end_time->format('H:i');
+        
+        return $currentTime < $sessionEndTime;
+    }
+
+    // ✅ UPDATED: ESTIMASI WAKTU TUNGGU dengan SESSION SUPPORT
     
     /**
-     * ✅ FIXED: Get estimasi waktu tunggu berdasarkan tanggal_antrian
+     * ✅ UPDATED: Get estimasi waktu tunggu berdasarkan session atau tanggal_antrian
      */
     public function getEstimasiTungguAttribute(): ?int
     {
@@ -243,23 +340,28 @@ class Queue extends Model
             $estimatedTime = $this->estimated_call_time;
             
             if ($estimatedTime > $now) {
-                // Masih dalam estimasi normal
-                $diffMinutes = $now->diffInMinutes($estimatedTime);
-                return (int) round($diffMinutes);
+                return (int) round($now->diffInMinutes($estimatedTime));
             } else {
-                // Sudah lewat estimasi, pakai extra delay
                 return (int) ($this->extra_delay_minutes ?: 5);
             }
         }
         
-        // ✅ FIXED FALLBACK: Berdasarkan tanggal_antrian, BUKAN created_at
-        $antrianDidepan = self::where('service_id', $this->service_id)
-            ->where('status', 'waiting')
-            ->where('id', '<', $this->id)
-            ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today()) // ✅ FIXED
-            ->count();
-        
-        return ($antrianDidepan + 1) * 15; // 15 menit per antrian
+        // ✅ NEW: Fallback berdasarkan session dokter atau tanggal
+        if ($this->doctor_id) {
+            // Berdasarkan session dokter
+            $sessionPosition = $this->session_queue_position;
+            return $sessionPosition * 15; // 15 menit per antrian
+        } else {
+            // Berdasarkan service + tanggal (sistem lama)
+            $antrianDidepan = self::where('service_id', $this->service_id)
+                ->where('status', 'waiting')
+                ->where('id', '<', $this->id)
+                ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today())
+                ->whereNull('doctor_id')
+                ->count();
+            
+            return ($antrianDidepan + 1) * 15;
+        }
     }
 
     /**
@@ -304,15 +406,22 @@ class Queue extends Model
     }
 
     /**
-     * ✅ FIXED: Get posisi dalam antrian berdasarkan tanggal_antrian
+     * ✅ UPDATED: Get posisi dalam antrian berdasarkan session atau tanggal_antrian
      */
     public function getQueuePositionAttribute(): int
     {
-        return self::where('service_id', $this->service_id)
-            ->where('status', 'waiting')
-            ->where('id', '<', $this->id)
-            ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today()) // ✅ FIXED
-            ->count() + 1;
+        if ($this->doctor_id) {
+            // Gunakan session queue position jika ada dokter
+            return $this->session_queue_position;
+        } else {
+            // Fallback ke sistem lama
+            return self::where('service_id', $this->service_id)
+                ->where('status', 'waiting')
+                ->where('id', '<', $this->id)
+                ->whereDate('tanggal_antrian', $this->tanggal_antrian ?? today())
+                ->whereNull('doctor_id')
+                ->count() + 1;
+        }
     }
 
     /**
@@ -323,7 +432,16 @@ class Queue extends Model
         if (!$this->estimated_call_time) {
             // FALLBACK: Hitung estimasi manual
             $estimasiMenit = $this->estimasi_tunggu;
-            $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            
+            if ($this->doctor_id && $this->doctorSchedule) {
+                // Berdasarkan session dokter
+                $sessionStartTime = $this->doctorSchedule->start_time;
+                $estimatedTime = $this->tanggal_antrian->copy()->setTimeFromTimeString($sessionStartTime->format('H:i'))->addMinutes($estimasiMenit);
+            } else {
+                // Fallback sistem lama
+                $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            }
+            
             return $estimatedTime->setTimezone('Asia/Jakarta')->format('H:i');
         }
 
@@ -340,9 +458,16 @@ class Queue extends Model
         }
 
         if (!$this->estimated_call_time) {
-            // FALLBACK: Hitung berdasarkan created_at + estimasi
+            // FALLBACK: Hitung berdasarkan session atau created_at + estimasi
             $estimasiMenit = $this->estimasi_tunggu;
-            $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            
+            if ($this->doctor_id && $this->doctorSchedule) {
+                $sessionStartTime = $this->doctorSchedule->start_time;
+                $estimatedTime = $this->tanggal_antrian->copy()->setTimeFromTimeString($sessionStartTime->format('H:i'))->addMinutes($estimasiMenit);
+            } else {
+                $estimatedTime = $this->created_at->addMinutes($estimasiMenit);
+            }
+            
             return $estimatedTime < now();
         }
 
@@ -375,10 +500,10 @@ class Queue extends Model
         return in_array($this->status, ['waiting', 'serving']);
     }
 
-    // ✅ SCOPE METHODS - FIXED untuk tanggal_antrian
+    // ✅ SCOPE METHODS - FIXED untuk tanggal_antrian dan session
     public function scopeToday($query)
     {
-        return $query->whereDate('tanggal_antrian', today()); // ✅ FIXED: tanggal_antrian
+        return $query->whereDate('tanggal_antrian', today());
     }
 
     public function scopeForUser($query, $userId)
@@ -435,7 +560,7 @@ class Queue extends Model
                     ->where('estimated_call_time', '>=', now());
     }
 
-    // ✅ NEW SCOPES untuk tanggal_antrian
+    // ✅ NEW SCOPES untuk tanggal_antrian dan session
     public function scopeForDate($query, $date)
     {
         return $query->whereDate('tanggal_antrian', $date);
@@ -450,5 +575,40 @@ class Queue extends Model
     public function scopeTodayQueues($query)
     {
         return $query->whereDate('tanggal_antrian', today());
+    }
+
+    /**
+     * ✅ NEW: Scope untuk filter berdasarkan session dokter
+     */
+    public function scopeInDoctorSession($query, $doctorId, $tanggalAntrian)
+    {
+        return $query->where('doctor_id', $doctorId)
+                     ->whereDate('tanggal_antrian', $tanggalAntrian);
+    }
+
+    /**
+     * ✅ NEW: Scope untuk antrian dalam session yang sama
+     */
+    public function scopeSameSession($query, $doctorId, $tanggalAntrian)
+    {
+        return $query->where('doctor_id', $doctorId)
+                     ->whereDate('tanggal_antrian', $tanggalAntrian)
+                     ->where('status', 'waiting');
+    }
+
+    /**
+     * ✅ NEW: Scope untuk non-session queues (backward compatibility)
+     */
+    public function scopeNonSession($query)
+    {
+        return $query->whereNull('doctor_id');
+    }
+
+    /**
+     * ✅ NEW: Scope untuk session-based queues
+     */
+    public function scopeSessionBased($query)
+    {
+        return $query->whereNotNull('doctor_id');
     }
 }
