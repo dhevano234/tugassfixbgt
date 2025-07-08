@@ -3,9 +3,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany; // ✅ TAMBAH INI
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
+use App\Models\DailyQuota;
 
 class DoctorSchedule extends Model
 {
@@ -49,6 +50,14 @@ class DoctorSchedule extends Model
     public function queues(): HasMany
     {
         return $this->hasMany(Queue::class, 'doctor_id');
+    }
+
+    /**
+     * ✅ NEW: Relationship ke DailyQuota
+     */
+    public function dailyQuotas(): HasMany
+    {
+        return $this->hasMany(DailyQuota::class);
     }
 
     /**
@@ -260,6 +269,118 @@ class DoctorSchedule extends Model
             ->whereJsonContains('days', strtolower($day))
             ->where('is_active', true)
             ->first();
+    }
+
+    /**
+     * ✅ NEW: Get quota untuk tanggal tertentu
+     */
+    public function getQuotaForDate($date): ?DailyQuota
+    {
+        return $this->dailyQuotas()
+            ->where('quota_date', $date)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    /**
+     * ✅ NEW: Check apakah ada quota untuk tanggal tertentu
+     */
+    public function hasQuotaForDate($date): bool
+    {
+        return $this->getQuotaForDate($date) !== null;
+    }
+
+    /**
+     * ✅ NEW: Get atau create quota untuk tanggal tertentu
+     */
+    public function getOrCreateQuotaForDate($date, $defaultQuota = 20): DailyQuota
+    {
+        return DailyQuota::getOrCreateQuota($this->id, $date, $defaultQuota);
+    }
+
+    /**
+     * ✅ NEW: Check apakah quota masih tersedia untuk tanggal tertentu
+     */
+    public function isQuotaAvailableForDate($date): bool
+    {
+        return DailyQuota::isQuotaAvailable($this->id, $date);
+    }
+
+    /**
+     * ✅ NEW: Get quota summary untuk periode tertentu
+     */
+    public function getQuotaSummary($startDate, $endDate): array
+    {
+        $quotas = $this->dailyQuotas()
+            ->whereBetween('quota_date', [$startDate, $endDate])
+            ->where('is_active', true)
+            ->get();
+        
+        return [
+            'total_days' => $quotas->count(),
+            'total_quota' => $quotas->sum('total_quota'),
+            'total_used' => $quotas->sum('used_quota'),
+            'total_available' => $quotas->sum('available_quota'),
+            'average_usage' => $quotas->count() > 0 ? $quotas->avg('usage_percentage') : 0,
+            'full_days' => $quotas->filter->isQuotaFull()->count(),
+            'available_days' => $quotas->filter(fn($q) => $q->available_quota > 0)->count(),
+        ];
+    }
+
+    /**
+     * ✅ NEW: Scope untuk yang punya quota aktif
+     */
+    public function scopeWithActiveQuota($query, $date = null)
+    {
+        $date = $date ?? today();
+        
+        return $query->whereHas('dailyQuotas', function ($q) use ($date) {
+            $q->where('quota_date', $date)
+              ->where('is_active', true);
+        });
+    }
+
+    /**
+     * ✅ NEW: Scope untuk yang quota masih tersedia
+     */
+    public function scopeWithAvailableQuota($query, $date = null)
+    {
+        $date = $date ?? today();
+        
+        return $query->whereHas('dailyQuotas', function ($q) use ($date) {
+            $q->where('quota_date', $date)
+              ->where('is_active', true)
+              ->whereRaw('used_quota < total_quota');
+        });
+    }
+
+    /**
+     * ✅ NEW: Get formatted quota info
+     */
+    public function getQuotaInfoForDate($date): array
+    {
+        $quota = $this->getQuotaForDate($date);
+        
+        if (!$quota) {
+            return [
+                'has_quota' => false,
+                'message' => 'Belum ada kuota untuk tanggal ini',
+                'can_book' => true, // Akan dibuat otomatis
+            ];
+        }
+        
+        return [
+            'has_quota' => true,
+            'quota' => $quota,
+            'formatted' => $quota->formatted_quota,
+            'percentage' => $quota->usage_percentage,
+            'status' => $quota->status_label,
+            'available' => $quota->available_quota,
+            'can_book' => !$quota->isQuotaFull(),
+            'message' => $quota->isQuotaFull() 
+                ? "Kuota penuh ({$quota->formatted_quota})"
+                : "Tersedia {$quota->available_quota} dari {$quota->total_quota} kuota",
+        ];
     }
 
     /**

@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - UPDATED dengan Session Support
+// File: app/Services/QueueService.php - FINAL dengan Session Support dan Quota Integration
 
 namespace App\Services;
 
@@ -8,6 +8,7 @@ use App\Models\Queue;
 use App\Models\Service;
 use App\Models\User;
 use App\Models\DoctorSchedule;
+use App\Models\DailyQuota;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -15,12 +16,19 @@ use Carbon\Carbon;
 class QueueService
 {
     /**
-     * ✅ UPDATED: Add queue dengan session dokter support
+     * ✅ UPDATED: Add queue dengan session dokter support dan quota checking
      */
     public function addQueue($serviceId, $userId = null, $ktpData = null, $tanggalAntrian = null, $doctorId = null)
     {
         return DB::transaction(function () use ($serviceId, $userId, $ktpData, $tanggalAntrian, $doctorId) {
             $tanggalAntrian = $tanggalAntrian ?? today();
+            
+            // ✅ NEW: Check quota availability
+            $quotaCheck = $this->checkQuotaAvailability($doctorId, $tanggalAntrian);
+            
+            if (!$quotaCheck['available']) {
+                throw new \Exception($quotaCheck['message']);
+            }
             
             // ✅ NEW: Validasi session dokter jika ada doctor_id
             if ($doctorId) {
@@ -52,6 +60,11 @@ class QueueService
                 'estimated_call_time' => $estimatedCallTime,
                 'extra_delay_minutes' => $this->getSessionDelay($doctorId, $tanggalAntrian),
             ]);
+
+            // ✅ NEW: Update quota usage
+            if ($quotaCheck['quota']) {
+                $quotaCheck['quota']->incrementUsedQuota();
+            }
 
             // Update estimasi untuk antrian lain
             $this->updateSessionEstimations($serviceId, $tanggalAntrian, $doctorId, $queue->id);
@@ -600,25 +613,41 @@ class QueueService
         ]);
     }
 
+    /**
+     * ✅ UPDATED: cancelQueue dengan quota decrement
+     */
     public function cancelQueue(Queue $queue)
     {
         if (!in_array($queue->status, ['waiting', 'serving'])) {
             return;
         }
 
-        $queue->update([
-            'status' => 'canceled',
-            'canceled_at' => now()
-        ]);
-        
-        // UPDATE estimasi queue lain setelah ada yang cancel
-        if ($queue->status === 'waiting') {
-            if ($queue->doctor_id) {
-                $this->updateSessionEstimations($queue->service_id, $queue->tanggal_antrian, $queue->doctor_id);
-            } else {
-                $this->updateEstimationsAfterQueueCalled($queue->service_id, $queue->tanggal_antrian);
+        DB::transaction(function () use ($queue) {
+            $queue->update([
+                'status' => 'canceled',
+                'canceled_at' => now()
+            ]);
+            
+            // ✅ NEW: Decrement quota jika ada doctor_id
+            if ($queue->doctor_id && $queue->tanggal_antrian) {
+                $quota = DailyQuota::where('doctor_schedule_id', $queue->doctor_id)
+                    ->where('quota_date', $queue->tanggal_antrian)
+                    ->first();
+                
+                if ($quota) {
+                    $quota->decrementUsedQuota();
+                }
             }
-        }
+            
+            // UPDATE estimasi queue lain setelah ada yang cancel
+            if ($queue->status === 'waiting') {
+                if ($queue->doctor_id) {
+                    $this->updateSessionEstimations($queue->service_id, $queue->tanggal_antrian, $queue->doctor_id);
+                } else {
+                    $this->updateEstimationsAfterQueueCalled($queue->service_id, $queue->tanggal_antrian);
+                }
+            }
+        });
     }
 
     public function searchUserByIdentifier(string $identifier): ?User
@@ -710,5 +739,202 @@ class QueueService
         }
 
         return $updatedCount;
+    }
+
+    // ✅ NEW QUOTA INTEGRATION METHODS
+
+    /**
+     * ✅ NEW: Check quota availability sebelum create queue
+     */
+    public function checkQuotaAvailability($doctorId, $tanggalAntrian): array
+    {
+        if (!$doctorId) {
+            return [
+                'available' => true,
+                'quota' => null,
+                'message' => 'Non-session queue - no quota limit'
+            ];
+        }
+        
+        $quota = DailyQuota::where('doctor_schedule_id', $doctorId)
+            ->where('quota_date', $tanggalAntrian)
+            ->where('is_active', true)
+            ->first();
+        
+        if (!$quota) {
+            // Auto-create quota with default 20
+            $quota = DailyQuota::getOrCreateQuota($doctorId, $tanggalAntrian, 20);
+            $quota->updateUsedQuota(); // Sync dengan antrian yang sudah ada
+        }
+        
+        $available = !$quota->isQuotaFull();
+        
+        return [
+            'available' => $available,
+            'quota' => $quota,
+            'message' => $available 
+                ? "Kuota tersedia: {$quota->available_quota}/{$quota->total_quota}"
+                : "Kuota sudah penuh: {$quota->used_quota}/{$quota->total_quota}"
+        ];
+    }
+
+    /**
+     * ✅ NEW: Get quota summary untuk tanggal tertentu
+     */
+    public function getQuotaSummaryForDate($date): array
+    {
+        return DailyQuota::getQuotaSummaryForDate($date);
+    }
+
+    /**
+     * ✅ NEW: Get available doctors dengan quota info
+     */
+    public function getAvailableDoctorSessionsWithQuota($tanggalAntrian)
+    {
+        $sessions = $this->getAvailableDoctorSessions($tanggalAntrian);
+        
+        return $sessions->map(function ($session) use ($tanggalAntrian) {
+            $quotaCheck = $this->checkQuotaAvailability($session['id'], $tanggalAntrian);
+            
+            $session['quota_info'] = [
+                'available' => $quotaCheck['available'],
+                'quota' => $quotaCheck['quota'] ? [
+                    'total' => $quotaCheck['quota']->total_quota,
+                    'used' => $quotaCheck['quota']->used_quota,
+                    'remaining' => $quotaCheck['quota']->available_quota,
+                    'percentage' => $quotaCheck['quota']->usage_percentage,
+                    'status' => $quotaCheck['quota']->status_label,
+                ] : null,
+                'message' => $quotaCheck['message'],
+            ];
+            
+            return $session;
+        })->filter(function ($session) {
+            // Filter hanya yang masih ada quota
+            return $session['quota_info']['available'];
+        });
+    }
+
+    /**
+     * ✅ NEW: Bulk create quotas untuk semua dokter
+     */
+    public function createDailyQuotasForDate($date, $defaultQuota = 20): array
+    {
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        // Get all active doctors yang praktik di hari tersebut
+        $doctors = DoctorSchedule::where('is_active', true)
+            ->whereJsonContains('days', $dayOfWeek)
+            ->get();
+        
+        $created = 0;
+        $existing = 0;
+        $results = [];
+        
+        foreach ($doctors as $doctor) {
+            $quota = DailyQuota::where('doctor_schedule_id', $doctor->id)
+                ->where('quota_date', $date)
+                ->first();
+            
+            if (!$quota) {
+                $quota = DailyQuota::create([
+                    'doctor_schedule_id' => $doctor->id,
+                    'quota_date' => $date,
+                    'total_quota' => $defaultQuota,
+                    'used_quota' => 0,
+                    'is_active' => true,
+                ]);
+                
+                // Sync dengan antrian yang sudah ada
+                $quota->updateUsedQuota();
+                $created++;
+                
+                $results[] = [
+                    'doctor' => $doctor->doctor_name,
+                    'service' => $doctor->service->name ?? 'Unknown',
+                    'action' => 'created',
+                    'quota' => $quota->formatted_quota,
+                ];
+            } else {
+                $existing++;
+                $results[] = [
+                    'doctor' => $doctor->doctor_name,
+                    'service' => $doctor->service->name ?? 'Unknown',
+                    'action' => 'existing',
+                    'quota' => $quota->formatted_quota,
+                ];
+            }
+        }
+        
+        return [
+            'created' => $created,
+            'existing' => $existing,
+            'total_doctors' => $doctors->count(),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * ✅ NEW: Sync all quotas untuk tanggal tertentu
+     */
+    public function syncQuotasForDate($date): array
+    {
+        $quotas = DailyQuota::where('quota_date', $date)->get();
+        $synced = 0;
+        $results = [];
+        
+        foreach ($quotas as $quota) {
+            $oldUsed = $quota->used_quota;
+            $quota->updateUsedQuota();
+            $newUsed = $quota->fresh()->used_quota;
+            
+            if ($oldUsed !== $newUsed) {
+                $synced++;
+            }
+            
+            $results[] = [
+                'doctor' => $quota->doctorSchedule->doctor_name ?? 'Unknown',
+                'old_used' => $oldUsed,
+                'new_used' => $newUsed,
+                'total' => $quota->total_quota,
+                'changed' => $oldUsed !== $newUsed,
+            ];
+        }
+        
+        return [
+            'synced' => $synced,
+            'total_quotas' => $quotas->count(),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * ✅ NEW: Get quota alerts (nearly full, full, etc.)
+     */
+    public function getQuotaAlerts($date = null): array
+    {
+        $date = $date ?? today();
+        
+        $quotas = DailyQuota::with('doctorSchedule.service')
+            ->where('quota_date', $date)
+            ->where('is_active', true)
+            ->get();
+        
+        $alerts = [
+            'full' => $quotas->filter->isQuotaFull(),
+            'nearly_full' => $quotas->filter->isQuotaNearlyFull(),
+            'available' => $quotas->filter(fn($q) => $q->available_quota > 0 && !$q->isQuotaNearlyFull()),
+        ];
+        
+        return [
+            'date' => Carbon::parse($date)->format('d F Y'),
+            'total_quotas' => $quotas->count(),
+            'full_count' => $alerts['full']->count(),
+            'nearly_full_count' => $alerts['nearly_full']->count(),
+            'available_count' => $alerts['available']->count(),
+            'alerts' => $alerts,
+            'summary' => DailyQuota::getQuotaSummaryForDate($date),
+        ];
     }
 }

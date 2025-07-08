@@ -1,6 +1,6 @@
 <?php
 // File: app/Providers/Filament/AdminPanelProvider.php
-// UPDATE: Tambahkan Patient Management Resource
+// FINAL: AdminPanelProvider dengan Patient Management dan DailyQuota Integration
 
 namespace App\Providers\Filament;
 
@@ -37,12 +37,20 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Pages\AdminDashboard::class,
             ])
             ->resources([
-                // ✅ TAMBAHAN: Register Patient Management Resource secara eksplisit
-                \App\Filament\Resources\PatientManagementResource::class,
-                // Resource lain akan di-discover otomatis
+                // ✅ REGISTER RESOURCES: Urutan sesuai prioritas di dashboard
+                \App\Filament\Resources\PatientManagementResource::class,  // Data Pasien
+                \App\Filament\Resources\DailyQuotaResource::class,         // ✅ NEW: Kuota Antrian
+                \App\Filament\Resources\CounterResource::class,            // Kelola Loket
+                \App\Filament\Resources\QueueResource::class,              // Antrian
+                \App\Filament\Resources\DoctorScheduleResource::class,     // Jadwal Dokter
+                \App\Filament\Resources\ServiceResource::class,           // Layanan
+                \App\Filament\Resources\MedicalRecordResource::class,      // Medical Records
+                // Resource lain akan di-discover otomatis jika ada
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
-            ->widgets([])
+            ->widgets([
+                // Widgets akan di-discover otomatis
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -57,6 +65,7 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 \App\Http\Middleware\EnsureAdminRole::class,
-            ]);
+            ])
+            ->spa(); // ✅ OPTIONAL: Enable SPA mode untuk better performance
     }
 }
