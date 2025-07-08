@@ -1,9 +1,9 @@
 {{-- File: resources/views/filament/pages/admin-dashboard.blade.php --}}
-{{-- FINAL: Dashboard Admin dengan Patient Management dan Quota Integration --}}
+{{-- UPDATE: Tambah card Patient Management --}}
 
 <x-filament-panels::page>
 <div class="space-y-6">
-    {{-- Welcome Section --}}
+    {{-- Welcome Section - Simple seperti Dokter --}}
     <div class="bg-white rounded-lg shadow border p-6">
         <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
@@ -40,7 +40,7 @@
         </div>
     </div>
 
-    {{-- Connection Status --}}
+    {{-- Connection Status - Simple Info --}}
     <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
         <div class="flex items-center">
             <div class="w-2 h-2 bg-amber-400 rounded-full mr-3"></div>
@@ -51,47 +51,9 @@
         </div>
     </div>
 
-    {{-- ✅ NEW: Quota Alerts Section --}}
-    @php
-        $today = today();
-        $quotaAlerts = \App\Services\QueueService::make()->getQuotaAlerts($today);
-        $hasAlerts = $quotaAlerts['full_count'] > 0 || $quotaAlerts['nearly_full_count'] > 0;
-    @endphp
-
-    @if($hasAlerts)
-    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-        <div class="flex items-start">
-            <div class="flex-shrink-0">
-                <svg class="w-5 h-5 text-red-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                </svg>
-            </div>
-            <div class="ml-3">
-                <h3 class="text-sm font-medium text-red-800">
-                    Peringatan Kuota Antrian
-                </h3>
-                <div class="mt-2 text-sm text-red-700">
-                    @if($quotaAlerts['full_count'] > 0)
-                        <p>• {{ $quotaAlerts['full_count'] }} dokter dengan kuota penuh</p>
-                    @endif
-                    @if($quotaAlerts['nearly_full_count'] > 0)
-                        <p>• {{ $quotaAlerts['nearly_full_count'] }} dokter dengan kuota hampir penuh (≥90%)</p>
-                    @endif
-                </div>
-                <div class="mt-3">
-                    <a href="{{ url('/admin/daily-quotas?activeTab=nearly_full') }}" 
-                       class="text-sm font-medium text-red-600 hover:text-red-500">
-                        Kelola Kuota →
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    @endif
-
-    {{-- Main Navigation Cards - Grid dengan Patient Management dan Kuota Antrian --}}
+    {{-- Main Navigation Cards - Grid dengan Patient Management --}}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
-        {{-- Data Pasien --}}
+        {{-- Data Pasien - BARU --}}
         <a href="{{ url('/admin/patient-management') }}" 
            class="block bg-white rounded-lg shadow border hover:shadow-md transition-shadow">
             <div class="p-6">
@@ -106,31 +68,6 @@
                     <div class="ml-4">
                         <h3 class="text-lg font-medium text-gray-900">Data Pasien</h3>
                         <p class="text-sm text-gray-500">Kelola data semua pasien</p>
-                    </div>
-                </div>
-            </div>
-        </a>
-
-        {{-- ✅ NEW: Kuota Antrian --}}
-        <a href="{{ url('/admin/daily-quotas') }}" 
-           class="block bg-white rounded-lg shadow border hover:shadow-md transition-shadow relative">
-            @if($hasAlerts)
-                <div class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                    <span class="text-xs font-bold text-white">{{ $quotaAlerts['full_count'] + $quotaAlerts['nearly_full_count'] }}</span>
-                </div>
-            @endif
-            <div class="p-6">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <div class="w-8 h-8 bg-orange-100 rounded-md flex items-center justify-center">
-                            <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4m4 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h8m-8-4h8m-8 4h8"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="text-lg font-medium text-gray-900">Kuota Antrian</h3>
-                        <p class="text-sm text-gray-500">Atur kuota harian dokter</p>
                     </div>
                 </div>
             </div>
@@ -216,113 +153,26 @@
                 </div>
             </div>
         </a>
-    </div>
 
-    {{-- ✅ NEW: Quota Summary Section --}}
-    <div class="bg-white rounded-lg shadow border p-6">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-medium text-gray-900">Ringkasan Kuota Hari Ini</h3>
-            <a href="{{ url('/admin/daily-quotas') }}" 
-               class="text-sm font-medium text-amber-600 hover:text-amber-500">
-                Kelola Semua →
-            </a>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="text-center p-4 bg-blue-50 rounded-lg">
-                <div class="text-2xl font-bold text-blue-600">{{ $quotaAlerts['summary']['total_doctors'] }}</div>
-                <div class="text-sm text-gray-600">Total Dokter</div>
-            </div>
-            
-            <div class="text-center p-4 bg-green-50 rounded-lg">
-                <div class="text-2xl font-bold text-green-600">{{ $quotaAlerts['summary']['total_quota'] }}</div>
-                <div class="text-sm text-gray-600">Total Kuota</div>
-            </div>
-            
-            <div class="text-center p-4 bg-yellow-50 rounded-lg">
-                <div class="text-2xl font-bold text-yellow-600">{{ $quotaAlerts['summary']['total_used'] }}</div>
-                <div class="text-sm text-gray-600">Sudah Digunakan</div>
-            </div>
-            
-            <div class="text-center p-4 bg-purple-50 rounded-lg">
-                <div class="text-2xl font-bold text-purple-600">{{ $quotaAlerts['summary']['total_available'] }}</div>
-                <div class="text-sm text-gray-600">Masih Tersedia</div>
-            </div>
-        </div>
-
-        {{-- Quick Quota Actions --}}
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="{{ url('/admin/daily-quotas/create') }}" 
-               class="flex items-center justify-center p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-amber-400 hover:bg-amber-50 transition-colors">
-                <div class="text-center">
-                    <svg class="w-6 h-6 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                    </svg>
-                    <span class="text-sm font-medium text-gray-600">Tambah Kuota</span>
+        {{-- Monitor Ruang Tunggu --}}
+        <a href="{{ url('/admin/dashboardkiosantrian') }}" 
+           class="block bg-white rounded-lg shadow border hover:shadow-md transition-shadow">
+            <div class="p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-purple-100 rounded-md flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <h3 class="text-lg font-medium text-gray-900">Ruang Tunggu</h3>
+                        <p class="text-sm text-gray-500">Monitor display antrian</p>
+                    </div>
                 </div>
-            </a>
-
-            <button onclick="createTodayQuotas()" 
-                    class="flex items-center justify-center p-3 border-2 border-dashed border-green-300 rounded-lg hover:border-green-400 hover:bg-green-50 transition-colors">
-                <div class="text-center">
-                    <svg class="w-6 h-6 text-green-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4m4 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h8m-8-4h8m-8 4h8"/>
-                    </svg>
-                    <span class="text-sm font-medium text-green-600">Buat Kuota Hari Ini</span>
-                </div>
-            </button>
-
-            <a href="{{ url('/admin/daily-quotas?activeTab=nearly_full') }}" 
-               class="flex items-center justify-center p-3 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-colors">
-                <div class="text-center">
-                    <svg class="w-6 h-6 text-orange-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L5.268 15.5c-.77.833.192 2.5 1.732 2.5z"/>
-                    </svg>
-                    <span class="text-sm font-medium text-orange-600">Lihat Alert</span>
-                </div>
-            </a>
-        </div>
-    </div>
-
-    {{-- Quick Stats - UPDATED dengan quota info --}}
-    <div class="bg-white rounded-lg shadow border p-6">
-        <h3 class="text-lg font-medium text-gray-900 mb-4">Statistik Hari Ini</h3>
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-            @php
-                $today = today();
-                $totalPatients = \App\Models\User::where('role', 'user')->count();
-                $newPatientsToday = \App\Models\User::where('role', 'user')->whereDate('created_at', $today)->count();
-                $queueToday = \App\Models\Queue::whereDate('tanggal_antrian', $today)->count();
-                $finishedToday = \App\Models\Queue::whereDate('tanggal_antrian', $today)->where('status', 'finished')->count();
-                $activeQuotasToday = \App\Models\DailyQuota::where('quota_date', $today)->where('is_active', true)->count();
-            @endphp
-            
-            <div class="text-center p-4 bg-indigo-50 rounded-lg">
-                <div class="text-2xl font-bold text-indigo-600">{{ $totalPatients }}</div>
-                <div class="text-sm text-gray-600">Total Pasien</div>
             </div>
-            
-            <div class="text-center p-4 bg-green-50 rounded-lg">
-                <div class="text-2xl font-bold text-green-600">{{ $newPatientsToday }}</div>
-                <div class="text-sm text-gray-600">Pasien Baru</div>
-            </div>
-            
-            <div class="text-center p-4 bg-blue-50 rounded-lg">
-                <div class="text-2xl font-bold text-blue-600">{{ $queueToday }}</div>
-                <div class="text-sm text-gray-600">Antrian Hari Ini</div>
-            </div>
-            
-            <div class="text-center p-4 bg-amber-50 rounded-lg">
-                <div class="text-2xl font-bold text-amber-600">{{ $finishedToday }}</div>
-                <div class="text-sm text-gray-600">Selesai Dilayani</div>
-            </div>
-
-            {{-- ✅ NEW: Active Quotas Today --}}
-            <div class="text-center p-4 bg-purple-50 rounded-lg">
-                <div class="text-2xl font-bold text-purple-600">{{ $activeQuotasToday }}</div>
-                <div class="text-sm text-gray-600">Kuota Aktif</div>
-            </div>
-        </div>
+        </a>
     </div>
 
     {{-- Kiosk Section --}}
@@ -419,32 +269,6 @@
                 }
             } catch (error) {
                 console.error('Admin Audio error:', error);
-            }
-        }
-
-        // ✅ NEW: Function untuk create today quotas
-        async function createTodayQuotas() {
-            if (confirm('Buat kuota otomatis untuk semua dokter yang praktik hari ini?')) {
-                try {
-                    const response = await fetch('/admin/daily-quotas/create-today', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-                        },
-                    });
-                    
-                    if (response.ok) {
-                        const result = await response.json();
-                        alert(`Berhasil! Dibuat ${result.created} kuota baru, ${result.existing} sudah ada.`);
-                        window.location.reload();
-                    } else {
-                        alert('Gagal membuat kuota. Silakan coba lagi.');
-                    }
-                } catch (error) {
-                    console.error('Error creating quotas:', error);
-                    alert('Terjadi kesalahan. Silakan gunakan tombol manual di halaman Kuota Antrian.');
-                }
             }
         }
 
