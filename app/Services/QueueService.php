@@ -61,7 +61,7 @@ class QueueService
     }
 
     /**
-     * ✅ NEW: Validasi session dokter
+     * ✅ FIXED: Validasi session dokter dengan logic tanggal yang benar
      */
     public function validateDoctorSession($doctorId, $tanggalAntrian)
     {
@@ -83,7 +83,7 @@ class QueueService
             throw new \InvalidArgumentException("Dokter {$doctor->doctor_name} tidak praktik pada hari ini");
         }
         
-        // ✅ IMPORTANT: Jika hari ini, cek apakah session masih berlangsung
+        // ✅ PERBAIKAN: Hanya cek waktu jika tanggal adalah hari ini
         if ($tanggalCarbon->isToday()) {
             $currentTime = now()->format('H:i');
             $sessionEndTime = $doctor->end_time->format('H:i');
@@ -95,6 +95,7 @@ class QueueService
                 );
             }
         }
+        // ✅ PERBAIKAN: Untuk tanggal masa depan, tidak perlu cek waktu
         
         return true;
     }
@@ -247,27 +248,31 @@ class QueueService
     }
 
     /**
-     * ✅ NEW: Get available doctor sessions for specific date
+     * ✅ FIXED: Get available doctor sessions for specific date
      */
     public function getAvailableDoctorSessions($tanggalAntrian)
     {
         $tanggalCarbon = Carbon::parse($tanggalAntrian);
         $dayOfWeek = strtolower($tanggalCarbon->format('l'));
-        $currentTime = $tanggalCarbon->isToday() ? now()->format('H:i') : '00:00';
+        
+        // ✅ PERBAIKAN: Hanya cek waktu jika tanggal adalah hari ini
+        $isToday = $tanggalCarbon->isToday();
+        $currentTime = $isToday ? now()->format('H:i') : '00:00';
         
         return DoctorSchedule::where('is_active', true)
             ->whereJsonContains('days', $dayOfWeek)
-            ->where(function($query) use ($tanggalCarbon, $currentTime) {
-                // Jika bukan hari ini, semua session available
-                if (!$tanggalCarbon->isToday()) {
+            ->where(function($query) use ($isToday, $currentTime) {
+                // ✅ PERBAIKAN: Jika bukan hari ini, semua session available
+                if (!$isToday) {
+                    // Untuk tanggal masa depan, tidak perlu filter waktu
                     return;
                 }
-                // ✅ JIKA HARI INI: Hanya session yang belum selesai
+                // ✅ Jika hari ini, hanya session yang belum selesai
                 $query->whereTime('end_time', '>', $currentTime);
             })
             ->with('service')
             ->get()
-            ->map(function($doctor) use ($tanggalAntrian) {
+            ->map(function($doctor) use ($tanggalAntrian, $isToday) {
                 $queueCount = Queue::where('doctor_id', $doctor->id)
                     ->whereDate('tanggal_antrian', $tanggalAntrian)
                     ->where('status', 'waiting')
@@ -283,7 +288,9 @@ class QueueService
                     'queue_count' => $queueCount,
                     'estimated_wait' => ($queueCount + 1) * 15,
                     'next_queue_number' => $this->generateNumberForSession($doctor->service_id, $tanggalAntrian, $doctor->id),
-                    'is_available' => true
+                    'is_available' => true,
+                    'is_today' => $isToday, // ✅ TAMBAH info apakah hari ini
+                    'selected_date' => $tanggalAntrian // ✅ TAMBAH info tanggal yang dipilih
                 ];
             });
     }

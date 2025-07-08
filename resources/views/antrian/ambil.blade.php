@@ -160,15 +160,7 @@
                         @enderror
                     </div>
 
-                    <!-- ✅ NEW: Session info display -->
-                    <div id="session-info" class="session-info" style="display: none;">
-                        <div class="session-details">
-                            <h6><i class="fas fa-clock"></i> Informasi Sesi</h6>
-                            <div id="session-content"></div>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
+                    <div class="form-group full-width">
                         <label for="tanggal_antrian_display" class="form-label">Tanggal Antrian <span class="required">*</span></label>
                         <div id="tanggal-antrian-picker" class="tanggal-antrian-picker">
                         </div>
@@ -176,6 +168,14 @@
                         @error('tanggal')
                             <div class="form-error">{{ $message }}</div>
                         @enderror
+                    </div>
+
+                    <!-- ✅ NEW: Session info display -->
+                    <div id="session-info" class="session-info full-width" style="display: none;">
+                        <div class="session-details">
+                            <h6><i class="fas fa-clock"></i> Informasi Sesi</h6>
+                            <div id="session-content"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -297,8 +297,6 @@
 </main>
 
 <style>
-
-
 /* ✅ NEW: Session info styles */
 .session-info {
     margin-top: 15px;
@@ -442,6 +440,17 @@
 
 .estimated-time-value {
     color: #27ae60;
+}
+
+.loading-option, .error-option, .no-sessions-option {
+    padding: 20px;
+    text-align: center;
+    color: #7f8c8d;
+    font-style: italic;
+}
+
+.error-option {
+    color: #e74c3c;
 }
 
 @media (max-width: 768px) {
@@ -1173,8 +1182,6 @@
 </style>
 
 <script>
-
-    // ✅ NEW: JavaScript untuk session management
 document.addEventListener('DOMContentLoaded', function() {
     const tanggalInput = document.getElementById('tanggal');
     const doctorDropdown = document.querySelector('[data-name="doctor_id"]');
@@ -1182,42 +1189,54 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessionInfo = document.getElementById('session-info');
     const sessionContent = document.getElementById('session-content');
     
-    // ✅ Update doctor options saat tanggal berubah
+    // ✅ FIXED: Update doctor options saat tanggal berubah
     function updateDoctorSessions(selectedDate) {
         if (!selectedDate) return;
         
+        console.log('Updating doctor sessions for date:', selectedDate);
+        
         // Show loading
         if (doctorOptions) {
-            doctorOptions.innerHTML = '<div class="loading-option">Memuat sesi dokter...</div>';
+            doctorOptions.innerHTML = '<div class="loading-option"><i class="fas fa-spinner fa-spin"></i> Memuat sesi dokter...</div>';
         }
         
-        // Fetch available sessions
-        fetch(`/api/antrian/available-sessions?tanggal=${selectedDate}`, {
+        // Fetch available sessions dengan parameter yang benar
+        const url = `/api/antrian/available-sessions?tanggal=${encodeURIComponent(selectedDate)}`;
+        console.log('Fetching from URL:', url);
+        
+        fetch(url, {
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Sessions response:', data);
+            
             if (data.success && doctorOptions) {
                 updateDoctorDropdownOptions(data.sessions, selectedDate);
             } else {
                 if (doctorOptions) {
-                    doctorOptions.innerHTML = '<div class="error-option">Gagal memuat sesi dokter</div>';
+                    doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Gagal memuat sesi dokter</div>';
                 }
             }
         })
         .catch(error => {
             console.error('Error fetching sessions:', error);
             if (doctorOptions) {
-                doctorOptions.innerHTML = '<div class="error-option">Terjadi kesalahan</div>';
+                doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Terjadi kesalahan memuat sesi</div>';
             }
         });
     }
     
-    // ✅ Update dropdown options dengan session info
+    // ✅ FIXED: Update dropdown options dengan session info yang benar
     function updateDoctorDropdownOptions(sessions, selectedDate) {
         if (!doctorOptions) return;
         
@@ -1234,26 +1253,55 @@ document.addEventListener('DOMContentLoaded', function() {
         let optionsHTML = '';
         
         sessions.forEach(session => {
-            const isToday = selectedDate === new Date().toISOString().split('T')[0];
-            const currentTime = new Date().toTimeString().split(' ')[0].substring(0, 5);
-            const sessionEndTime = session.end_time;
+            // ✅ PERBAIKAN: Cek apakah tanggal yang dipilih adalah hari ini
+            const selectedDateObj = new Date(selectedDate);
+            const todayDateObj = new Date();
             
-            const isSessionEnded = isToday && currentTime >= sessionEndTime;
-            const isSessionEndingSoon = isToday && (sessionEndTime.split(':')[0] - currentTime.split(':')[0]) <= 1;
+            // Normalisasi tanggal (set jam ke 00:00:00)
+            selectedDateObj.setHours(0, 0, 0, 0);
+            todayDateObj.setHours(0, 0, 0, 0);
             
+            const isSelectedDateToday = selectedDateObj.getTime() === todayDateObj.getTime();
+            
+            let isSessionEnded = false;
+            let isSessionEndingSoon = false;
+            
+            // ✅ PERBAIKAN: Hanya cek waktu jika tanggal yang dipilih adalah hari ini
+            if (isSelectedDateToday) {
+                const currentTime = new Date().toTimeString().split(' ')[0].substring(0, 5);
+                const sessionEndTime = session.end_time;
+                
+                isSessionEnded = currentTime >= sessionEndTime;
+                
+                // Cek apakah session akan berakhir dalam 1 jam
+                const currentHour = parseInt(currentTime.split(':')[0]);
+                const sessionEndHour = parseInt(sessionEndTime.split(':')[0]);
+                isSessionEndingSoon = (sessionEndHour - currentHour) <= 1 && (sessionEndHour - currentHour) > 0;
+            }
+            
+            // ✅ PERBAIKAN: Untuk tanggal besok atau masa depan, semua session available
             let statusClass = 'active';
             let statusText = 'Tersedia';
             
-            if (isSessionEnded) {
-                statusClass = 'ended';
-                statusText = 'Selesai';
-            } else if (isSessionEndingSoon) {
-                statusClass = 'ending-soon';
-                statusText = 'Segera Berakhir';
+            if (isSelectedDateToday) {
+                if (isSessionEnded) {
+                    statusClass = 'ended';
+                    statusText = 'Selesai';
+                } else if (isSessionEndingSoon) {
+                    statusClass = 'ending-soon';
+                    statusText = 'Segera Berakhir';
+                }
+            } else {
+                // Untuk tanggal masa depan, semua session tersedia
+                statusClass = 'active';
+                statusText = 'Tersedia';
             }
             
+            // ✅ PERBAIKAN: Session hanya unavailable jika hari ini DAN sudah berakhir
+            const isUnavailable = isSelectedDateToday && isSessionEnded;
+            
             optionsHTML += `
-                <div class="dropdown-option doctor-session-option ${isSessionEnded ? 'unavailable' : ''}" 
+                <div class="dropdown-option doctor-session-option ${isUnavailable ? 'unavailable' : ''}" 
                      data-value="${session.id}" 
                      data-text="${session.doctor_name}"
                      data-session-info='${JSON.stringify(session)}'>
@@ -1270,6 +1318,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="session-detail-item">
                             <div class="session-detail-label">Jam Praktik</div>
                             <div class="session-detail-value">${session.time_range}</div>
+                        </div>
+                        <div class="session-detail-item">
+                            <div class="session-detail-label">Antrian Saat Ini</div>
+                            <div class="session-detail-value queue-count-value">${session.queue_count} orang</div>
+                        </div>
+                        <div class="session-detail-item">
+                            <div class="session-detail-label">Estimasi</div>
+                            <div class="session-detail-value estimated-time-value">~${session.estimated_wait} menit</div>
                         </div>
                     </div>
                 </div>
@@ -1321,12 +1377,33 @@ document.addEventListener('DOMContentLoaded', function() {
         validateSessionRealtime(sessionInfo.id);
     }
     
-    // ✅ Show session info
+    // ✅ FIXED: Show session info dengan informasi tanggal yang benar
     function showSessionInfo(sessionInfo) {
         if (!sessionInfo || !sessionContent) return;
         
         const selectedDate = tanggalInput?.value;
-        const isToday = selectedDate === new Date().toISOString().split('T')[0];
+        const selectedDateObj = new Date(selectedDate);
+        const todayDateObj = new Date();
+        
+        // Normalisasi tanggal
+        selectedDateObj.setHours(0, 0, 0, 0);
+        todayDateObj.setHours(0, 0, 0, 0);
+        
+        const isSelectedDateToday = selectedDateObj.getTime() === todayDateObj.getTime();
+        const isFutureDate = selectedDateObj.getTime() > todayDateObj.getTime();
+        
+        let dateStatusText = '';
+        if (isSelectedDateToday) {
+            dateStatusText = '<p class="text-info"><small><i class="fas fa-info-circle"></i> Antrian untuk hari ini - estimasi dapat berubah sesuai kondisi antrian</small></p>';
+        } else if (isFutureDate) {
+            const dateString = selectedDateObj.toLocaleDateString('id-ID', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            dateStatusText = `<p class="text-success"><small><i class="fas fa-calendar-check"></i> Antrian untuk ${dateString}</small></p>`;
+        }
         
         sessionContent.innerHTML = `
             <p><strong>Dokter:</strong> <span>${sessionInfo.doctor_name}</span></p>
@@ -1335,7 +1412,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <p><strong>Antrian Saat Ini:</strong> <span>${sessionInfo.queue_count} orang</span></p>
             <p><strong>Nomor Antrian Anda:</strong> <span class="text-primary font-weight-bold">${sessionInfo.next_queue_number}</span></p>
             <p><strong>Estimasi Tunggu:</strong> <span>~${sessionInfo.estimated_wait} menit</span></p>
-            ${isToday ? '<p class="text-info"><small><i class="fas fa-info-circle"></i> Estimasi dapat berubah sesuai kondisi antrian</small></p>' : ''}
+            ${dateStatusText}
         `;
         
         sessionInfo.style.display = 'block';
@@ -1387,19 +1464,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // ✅ Event listener untuk perubahan tanggal
-    if (tanggalInput) {
-        tanggalInput.addEventListener('change', function() {
-            const selectedDate = this.value;
-            resetDoctorSelection();
-            updateDoctorSessions(selectedDate);
-        });
-    }
-    
-    // ✅ Initial load untuk tanggal hari ini
-    const initialDate = tanggalInput?.value || new Date().toISOString().split('T')[0];
-    updateDoctorSessions(initialDate);
-    
     // ✅ Helper function untuk close dropdown
     function closeDropdown(dropdown) {
         const trigger = dropdown.querySelector('.dropdown-trigger');
@@ -1408,9 +1472,64 @@ document.addEventListener('DOMContentLoaded', function() {
         trigger.classList.remove('active');
         menu.classList.remove('show');
     }
-});
+    
+    // ✅ ENHANCED: Event listener untuk perubahan tanggal yang lebih robust
+    function initDateChangeHandler() {
+        const tanggalAntrianPicker = document.getElementById('tanggal-antrian-picker');
+        const hiddenTanggalInput = document.getElementById('tanggal');
+        
+        if (tanggalAntrianPicker) {
+            // Event delegation untuk date options
+            tanggalAntrianPicker.addEventListener('click', function(e) {
+                const dateOption = e.target.closest('.date-option');
+                if (!dateOption) return;
+                
+                // Update selected state
+                this.querySelectorAll('.date-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                dateOption.classList.add('selected');
+                
+                // Update hidden input
+                const selectedDate = dateOption.getAttribute('data-date');
+                if (hiddenTanggalInput) {
+                    hiddenTanggalInput.value = selectedDate;
+                }
+                
+                console.log('Date changed to:', selectedDate);
+                
+                // ✅ PERBAIKAN: Reset doctor selection dan update sessions
+                resetDoctorSelection();
+                updateDoctorSessions(selectedDate);
+            });
+        }
+        
+        // ✅ Backup: Direct input change handler
+        if (hiddenTanggalInput) {
+            hiddenTanggalInput.addEventListener('change', function() {
+                const selectedDate = this.value;
+                console.log('Hidden input date changed to:', selectedDate);
+                
+                // Update visual picker jika ada
+                if (tanggalAntrianPicker) {
+                    tanggalAntrianPicker.querySelectorAll('.date-option').forEach(option => {
+                        option.classList.remove('selected');
+                    });
+                    
+                    const matchingOption = tanggalAntrianPicker.querySelector(`[data-date="${selectedDate}"]`);
+                    if (matchingOption) {
+                        matchingOption.classList.add('selected');
+                    }
+                }
+                
+                // Reset doctor dan update sessions
+                resetDoctorSelection();
+                updateDoctorSessions(selectedDate);
+            });
+        }
+    }
 
-document.addEventListener('DOMContentLoaded', function() {
+    // Initialize form
     const form = document.getElementById('antrianForm');
     const submitBtn = document.getElementById('submitBtn');
 
@@ -1419,6 +1538,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize character counter for chief_complaint
     initCharacterCounter();
+    
+    // Initialize date change handler
+    initDateChangeHandler();
 
     // Form validation and submission
     if (form) {
@@ -1742,16 +1864,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 dateOption.classList.add('selected');
                 if (hiddenTanggalInput) hiddenTanggalInput.value = dateString;
             }
-
-            dateOption.addEventListener('click', function() {
-                tanggalAntrianPicker.querySelectorAll('.date-option').forEach(option => {
-                    option.classList.remove('selected');
-                });
-                this.classList.add('selected');
-                if (hiddenTanggalInput) hiddenTanggalInput.value = this.getAttribute('data-date');
-                
-                console.log('Date selected:', this.getAttribute('data-date'));
-            });
             
             tanggalAntrianPicker.appendChild(dateOption);
         }
@@ -1823,6 +1935,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // ✅ Initial load dengan tanggal yang sudah dipilih atau hari ini
+    const initialDate = hiddenTanggalInput?.value || formatDateForInput(getCurrentDate());
+    console.log('Initial date load:', initialDate);
+    updateDoctorSessions(initialDate);
 });
 </script>
 @endsection
