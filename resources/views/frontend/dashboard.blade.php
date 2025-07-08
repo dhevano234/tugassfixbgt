@@ -6,11 +6,11 @@
 <main class="main-content">
     <!-- Welcome Card -->
     <div class="welcome-card animate">
-        <h1>Selamat Datang, {{ Auth::user()->name }}! 👋</h1>
-        <p>Kelola antrian dan layanan klinik dengan mudah</p>
+        <h1>Selamat Datang, {{ Auth::user()->name }}! </h1>
+        <p>Monitoring Antrian Dengan Mudah</p>
     </div>
     
-    <!-- ✅ ANTRIAN AKTIF CARD dengan estimasi realtime -->
+    <!-- ✅ ANTRIAN AKTIF CARD dengan estimasi realtime (tidak berubah) -->
     @if($antrianAktif)
     <div class="antrian-aktif-card animate" id="antrianAktifCard">
         <div class="card-header">
@@ -25,7 +25,12 @@
                 <div class="queue-number">{{ $antrianAktif->number }}</div>
                 <div class="queue-details">
                     <p><strong>Layanan:</strong> {{ $antrianAktif->service->name ?? 'Unknown' }}</p>
-                    <p><strong>Tanggal:</strong> {{ $antrianAktif->created_at->format('d F Y') }}</p>
+                    
+                    @if($antrianAktif->doctor_id && $antrianAktif->doctorSchedule)
+                        <p><strong>Dokter:</strong> {{ $antrianAktif->doctorSchedule->doctor_name ?? 'Unknown' }}</p>
+                    @endif
+                    
+                    <p><strong>Tanggal:</strong> {{ $antrianAktif->tanggal_antrian ? $antrianAktif->tanggal_antrian->format('d F Y') : $antrianAktif->created_at->format('d F Y') }}</p>
                     <p><strong>Jam Ambil:</strong> {{ $antrianAktif->created_at->format('H:i') }} WIB</p>
                 </div>
             </div>
@@ -51,10 +56,6 @@
                         @endif
                     </div>
                 </div>
-                <!-- Manual Refresh Button -->
-                {{-- <button onclick="forceRefreshEstimation()" class="refresh-btn" title="Refresh Estimasi">
-                    <i class="fas fa-sync-alt"></i> Refresh
-                </button> --}}
             </div>
             @elseif($antrianAktif->status === 'serving')
             <div class="serving-card">
@@ -77,8 +78,9 @@
     </div>
     @endif
     
-    <!-- Stats Row dengan data real -->
+    <!-- ✅ UPDATED: Stats Row dengan kuota dokter menggantikan total pasien -->
     <div class="stats-row">
+        <!-- Total Antrian Hari Ini (tetap) -->
         <div class="stat-card blue animate">
             <div class="stat-icon blue">
                 <i class="fas fa-clock"></i>
@@ -87,55 +89,75 @@
             <div class="stat-label">Antrian Hari Ini</div>
         </div>
         
-        <div class="stat-card green animate">
-            <div class="stat-icon green">
-                <i class="fas fa-users"></i>
+        <!-- ✅ NEW: Kuota Dokter Cards (menggantikan total pasien & dokter aktif) -->
+        @if($quotaInfo['has_quotas'])
+            @foreach($quotaInfo['quotas']->take(2) as $quota)
+            <div class="stat-card quota-card {{ $quota['status_color'] }} animate">
+                <div class="stat-icon {{ $quota['status_color'] }}">
+                    <i class="fas fa-user-md"></i>
+                </div>
+                <div class="stat-number">{{ $quota['formatted_quota'] }}</div>
+                <div class="stat-label">
+                    <div class="doctor-name">{{ $quota['doctor_name'] }}</div>
+                    <div class="quota-status">{{ $quota['status_label'] }}</div>
+                </div>
+                <div class="quota-bar">
+                    <div class="quota-progress" style="width: {{ $quota['usage_percentage'] }}%; background-color: var(--color-{{ $quota['status_color'] }});"></div>
+                </div>
             </div>
-            <div class="stat-number">{{ $stats['total_pasien'] }}</div>
-            <div class="stat-label">Total Pasien</div>
-        </div>
-        
-        <div class="stat-card orange animate">
-            <div class="stat-icon orange">
-                <i class="fas fa-user-md"></i>
+            @endforeach
+            
+            <!-- Jika ada lebih dari 2 dokter, tampilkan ringkasan -->
+            @if($quotaInfo['quotas']->count() > 2)
+            <div class="stat-card summary-card animate">
+                <div class="stat-icon gray">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="stat-number">+{{ $quotaInfo['quotas']->count() - 2 }}</div>
+                <div class="stat-label">
+                    <div class="doctor-name">Dokter Lainnya</div>
+                    <div class="quota-status">{{ $quotaInfo['quotas']->skip(2)->sum('available_quota') }} tersisa</div>
+                </div>
             </div>
-            <div class="stat-number">{{ $stats['dokter_aktif'] }}</div>
-            <div class="stat-label">Dokter Aktif</div>
-        </div>
-    </div>
-    
-    <!-- Content Row - Status Antrian Only -->
-    <div class="content-row">
-        <!-- Status Antrian dengan data real -->
-        <div class="content-card animate full-width">
-            <div class="card-header">
-                <i class="fas fa-chart-bar" style="color: #27ae60;"></i>
-                <h5>Status Antrian Hari Ini</h5>
+            @endif
+        @else
+            <!-- Fallback jika tidak ada quota hari ini -->
+            <div class="stat-card gray animate">
+                <div class="stat-icon gray">
+                    <i class="fas fa-calendar-times"></i>
+                </div>
+                <div class="stat-number">0</div>
+                <div class="stat-label">
+                    <div class="doctor-name">Belum Ada Kuota</div>
+                    <div class="quota-status">Hari Ini</div>
+                </div>
             </div>
             
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                <div style="text-align: center; padding: 15px; background: #e3f2fd; border-radius: 10px;">
-                    <div style="font-size: 1.5rem; font-weight: 700; color: #1976d2;">{{ $statusAntrian['menunggu'] }}</div>
-                    <small style="color: #7f8c8d;">Menunggu</small>
+            <!-- Placeholder untuk grid balance -->
+            <div class="stat-card gray animate">
+                <div class="stat-icon gray">
+                    <i class="fas fa-info-circle"></i>
                 </div>
-                <div style="text-align: center; padding: 15px; background: #fff3e0; border-radius: 10px;">
-                    <div style="font-size: 1.5rem; font-weight: 700; color: #f57c00;">{{ $statusAntrian['dipanggil'] }}</div>
-                    <small style="color: #7f8c8d;">Dipanggil</small>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #e8f5e8; border-radius: 10px;">
-                    <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">{{ $statusAntrian['selesai'] }}</div>
-                    <small style="color: #7f8c8d;">Selesai</small>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #ffebee; border-radius: 10px;">
-                    <div style="font-size: 1.5rem; font-weight: 700; color: #d32f2f;">{{ $statusAntrian['dibatalkan'] }}</div>
-                    <small style="color: #7f8c8d;">Dibatalkan</small>
+                <div class="stat-number">-</div>
+                <div class="stat-label">
+                    <div class="doctor-name">Info Kuota</div>
+                    <div class="quota-status">Belum tersedia</div>
                 </div>
             </div>
-        </div>
+        @endif
     </div>
 </main>
 
 <style>
+/* ✅ CSS Variables untuk warna */
+:root {
+    --color-success: #27ae60;
+    --color-warning: #f39c12;
+    --color-danger: #e74c3c;
+    --color-info: #3498db;
+    --color-gray: #95a5a6;
+}
+
 /* ✅ STYLES untuk antrian aktif card */
 .antrian-aktif-card, .no-antrian-card {
     background: white;
@@ -281,25 +303,6 @@
     color: #721c24;
 }
 
-.refresh-btn {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: #3498db;
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.refresh-btn:hover {
-    background: #2980b9;
-    transform: rotate(180deg);
-}
-
 .no-antrian-card .card-content {
     text-align: center;
     padding: 30px;
@@ -315,9 +318,125 @@
     margin-bottom: 20px;
 }
 
-/* ✅ TAMBAH: Style untuk content card full width */
-.content-card.full-width {
-    grid-column: 1 / -1;
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: #3498db;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+}
+
+/* ✅ UPDATED: Stats row dengan quota cards */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-card.quota-card {
+    border-left: 4px solid var(--color-info);
+}
+
+.stat-card.quota-card.success {
+    border-left-color: var(--color-success);
+}
+
+.stat-card.quota-card.warning {
+    border-left-color: var(--color-warning);
+}
+
+.stat-card.quota-card.danger {
+    border-left-color: var(--color-danger);
+}
+
+.stat-card.summary-card {
+    border-left: 4px solid var(--color-gray);
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 15px;
+    font-size: 20px;
+    color: white;
+}
+
+.stat-icon.blue { background: #3498db; }
+.stat-icon.success { background: var(--color-success); }
+.stat-icon.warning { background: var(--color-warning); }
+.stat-icon.danger { background: var(--color-danger); }
+.stat-icon.gray { background: var(--color-gray); }
+
+.stat-number {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    color: #7f8c8d;
+    font-size: 14px;
+}
+
+.stat-label .doctor-name {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 2px;
+}
+
+.stat-label .quota-status {
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+.quota-bar {
+    margin-top: 10px;
+    height: 4px;
+    background: #ecf0f1;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.quota-progress {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
 }
 
 /* ✅ CSS ANIMATIONS */
@@ -364,278 +483,19 @@
         min-width: 80px;
     }
     
-    .refresh-btn {
-        position: static;
-        margin-top: 15px;
-        width: 100%;
+    .stats-row {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stat-card {
+        padding: 15px;
+    }
+    
+    .stat-number {
+        font-size: 1.5rem;
     }
 }
 </style>
-
-@if($antrianAktif && $antrianAktif->status === 'waiting')
-<script>
-// ✅ REALTIME UPDATE estimasi waktu tunggu - SINGLE CLEAN VERSION
-class EstimationUpdater {
-    constructor() {
-        this.updateInterval = null;
-        this.countdownInterval = null;
-        this.lastEstimation = null;
-        this.isUpdating = false;
-        
-        this.init();
-    }
-    
-    init() {
-        // Wait for DOM to be ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.start());
-        } else {
-            this.start();
-        }
-    }
-    
-    start() {
-        // Start update interval (every 30 seconds)
-        this.updateInterval = setInterval(() => this.updateEstimasi(), 30000);
-        
-        // First update after 5 seconds
-        setTimeout(() => this.updateEstimasi(), 5000);
-        
-        // Start countdown timer after 1 second
-        setTimeout(() => this.startCountdownTimer(), 1000);
-        
-        // Setup cleanup on page unload
-        window.addEventListener('beforeunload', () => this.cleanup());
-    }
-    
-    async updateEstimasi() {
-        if (this.isUpdating) return;
-        
-        const estimasiCard = document.getElementById('estimasiCard');
-        if (!estimasiCard) return;
-        
-        this.isUpdating = true;
-        estimasiCard.classList.add('updating');
-        
-        try {
-            const response = await fetch('/dashboard/realtime-estimation', {
-                method: 'GET',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-                }
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                if (data.status === 'serving') {
-                    this.showNotification('🔔 Antrian Anda sudah dipanggil!', 'success');
-                    setTimeout(() => location.reload(), 2000);
-                    return;
-                }
-                
-                if (data.data) {
-                    this.handleEstimationUpdate(data.data);
-                }
-            }
-        } catch (error) {
-            console.error('Error updating estimation:', error);
-            this.showNotification('❌ Gagal update estimasi waktu', 'error');
-        } finally {
-            this.isUpdating = false;
-            estimasiCard.classList.remove('updating');
-        }
-    }
-    
-    handleEstimationUpdate(data) {
-        const estimasiCard = document.getElementById('estimasiCard');
-        const newEstimation = data.estimasi_menit;
-        
-        // Show animation if estimation changed
-        if (this.lastEstimation !== null && this.lastEstimation !== newEstimation) {
-            this.showEstimationChange(this.lastEstimation, newEstimation);
-        }
-        
-        this.lastEstimation = newEstimation;
-        this.updateEstimationUI(data);
-        
-        // Show status change notifications
-        if (data.status === 'delayed' && !estimasiCard.dataset.wasDelayed) {
-            this.showNotification('⚠️ Estimasi waktu tunggu bertambah', 'warning');
-            estimasiCard.dataset.wasDelayed = 'true';
-        } else if (data.status === 'on_time' && estimasiCard.dataset.wasDelayed) {
-            this.showNotification('✅ Estimasi waktu kembali normal', 'success');
-            estimasiCard.dataset.wasDelayed = 'false';
-        }
-    }
-    
-    updateEstimationUI(data) {
-        // Update time with animation
-        const timeValueElement = document.querySelector('#estimasiTime .time-value');
-        if (timeValueElement) {
-            timeValueElement.style.transform = 'scale(1.1)';
-            timeValueElement.textContent = data.estimasi_menit;
-            
-            setTimeout(() => {
-                timeValueElement.style.transform = 'scale(1)';
-            }, 200);
-        }
-        
-        // Update details
-        const updates = {
-            'posisiAntrian': data.posisi,
-            'waktuEstimasi': data.waktu_estimasi,
-            'antrianDidepan': data.antrian_didepan
-        };
-        
-        Object.entries(updates).forEach(([id, value]) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = value;
-        });
-        
-        // Update status
-        const statusElement = document.getElementById('estimasiStatus');
-        if (statusElement) {
-            statusElement.className = `estimasi-status status-${data.status}`;
-            
-            if (data.status === 'delayed') {
-                const extraDelay = data.extra_delay_minutes ? ` (+${data.extra_delay_minutes} menit)` : '';
-                statusElement.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Terlambat dari estimasi${extraDelay}`;
-            } else {
-                statusElement.innerHTML = '<i class="fas fa-check-circle"></i> Dalam estimasi waktu';
-            }
-        }
-    }
-    
-    showEstimationChange(oldValue, newValue) {
-        const timeContainer = document.getElementById('estimasiTime');
-        if (!timeContainer) return;
-        
-        const changeIndicator = document.createElement('div');
-        changeIndicator.className = 'estimation-change';
-        changeIndicator.style.cssText = `
-            position: absolute;
-            top: -10px;
-            right: -10px;
-            background: ${newValue > oldValue ? '#e74c3c' : '#27ae60'};
-            color: white;
-            padding: 2px 6px;
-            border-radius: 10px;
-            font-size: 11px;
-            font-weight: bold;
-            z-index: 10;
-            animation: fadeInOut 3s ease-in-out;
-        `;
-        
-        const difference = Math.abs(newValue - oldValue);
-        const sign = newValue > oldValue ? '+' : '-';
-        changeIndicator.textContent = `${sign}${difference}m`;
-        
-        timeContainer.style.position = 'relative';
-        timeContainer.appendChild(changeIndicator);
-        
-        setTimeout(() => {
-            if (changeIndicator.parentNode) {
-                changeIndicator.parentNode.removeChild(changeIndicator);
-            }
-        }, 3000);
-    }
-    
-    showNotification(message, type = 'info') {
-        // Remove existing notification
-        const existingNotification = document.querySelector('.estimation-notification');
-        if (existingNotification) {
-            existingNotification.remove();
-        }
-        
-        const colors = {
-            'success': '#27ae60',
-            'warning': '#f39c12',
-            'error': '#e74c3c',
-            'info': '#3498db'
-        };
-        
-        const notification = document.createElement('div');
-        notification.className = `estimation-notification notification-${type}`;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: ${colors[type] || colors.info};
-            color: white;
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 1000;
-            animation: slideInRight 0.3s ease-out;
-            max-width: 300px;
-        `;
-        
-        notification.textContent = message;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.style.animation = 'slideOutRight 0.3s ease-in';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 5000);
-    }
-    
-    startCountdownTimer() {
-        const timeValueElement = document.querySelector('#estimasiTime .time-value');
-        if (!timeValueElement) return;
-        
-        let currentMinutes = parseInt(timeValueElement.textContent);
-        
-        this.countdownInterval = setInterval(() => {
-            if (currentMinutes > 0) {
-                currentMinutes--;
-                timeValueElement.textContent = currentMinutes;
-                
-                if (currentMinutes <= 2) {
-                    timeValueElement.style.color = '#e74c3c';
-                    timeValueElement.style.animation = 'pulse 1s infinite';
-                } else if (currentMinutes <= 5) {
-                    timeValueElement.style.color = '#f39c12';
-                }
-            } else {
-                clearInterval(this.countdownInterval);
-                this.updateEstimasi();
-            }
-        }, 60000); // Every 1 minute
-    }
-    
-    forceRefresh() {
-        this.updateEstimasi();
-        this.showNotification('🔄 Estimasi waktu diperbarui', 'info');
-    }
-    
-    cleanup() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
-        
-        if (this.countdownInterval) {
-            clearInterval(this.countdownInterval);
-            this.countdownInterval = null;
-        }
-    }
-}
-
-// Initialize the updater
-const estimationUpdater = new EstimationUpdater();
-
-// Global function for manual refresh button
-function forceRefreshEstimation() {
-    estimationUpdater.forceRefresh();
-}
-</script>
-@endif
-@endsection

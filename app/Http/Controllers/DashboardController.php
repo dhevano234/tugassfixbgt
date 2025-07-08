@@ -1,5 +1,5 @@
 <?php
-// File: app/Http/Controllers/DashboardController.php - FIXED ESTIMATION
+// File: app/Http/Controllers/DashboardController.php - FIXED ESTIMATION + QuotaInfo
 
 namespace App\Http\Controllers;
 
@@ -9,6 +9,7 @@ use App\Models\Queue;
 use App\Models\User;
 use App\Models\Service;
 use App\Models\DoctorSchedule;
+use App\Models\DailyQuota; // ✅ TAMBAH: Import DailyQuota
 use Carbon\Carbon;
 
 class DashboardController extends Controller
@@ -28,11 +29,11 @@ class DashboardController extends Controller
         // ✅ STATISTIK REAL untuk cards
         $stats = [
             'antrian_hari_ini' => Queue::whereDate('tanggal_antrian', $today)->count(), // ✅ FIXED
-            'total_pasien' => User::where('role', 'user')->count(),
-            'dokter_aktif' => DoctorSchedule::distinct('doctor_name')
-                                           ->where('is_active', true)
-                                           ->count('doctor_name'),
+            // ✅ HAPUS: total_pasien dan dokter_aktif (diganti dengan quota)
         ];
+
+        // ✅ NEW: Tambah quota info untuk menggantikan total pasien & dokter aktif
+        $quotaInfo = $this->getTodayQuotaInfo();
 
         // ✅ STATUS ANTRIAN REAL untuk chart - berdasarkan tanggal_antrian
         $statusAntrian = [
@@ -51,9 +52,52 @@ class DashboardController extends Controller
         return view('frontend.dashboard', compact(
             'antrianAktif', 
             'stats', 
+            'quotaInfo', // ✅ TAMBAH: quotaInfo ke compact
             'statusAntrian', 
             'estimasiInfo'
         ));
+    }
+
+    /**
+     * ✅ NEW: Get quota information untuk hari ini
+     */
+    private function getTodayQuotaInfo()
+    {
+        $today = today();
+        
+        // Get all active quotas untuk hari ini
+        $quotas = DailyQuota::with(['doctorSchedule.service'])
+            ->where('quota_date', $today)
+            ->where('is_active', true)
+            ->orderBy('used_quota', 'desc') // Urutkan berdasarkan yang paling banyak terpakai
+            ->get();
+
+        if ($quotas->isEmpty()) {
+            return [
+                'has_quotas' => false,
+                'total_doctors' => 0,
+                'quotas' => collect([])
+            ];
+        }
+
+        return [
+            'has_quotas' => true,
+            'total_doctors' => $quotas->count(),
+            'quotas' => $quotas->map(function ($quota) {
+                return [
+                    'doctor_name' => $quota->doctorSchedule->doctor_name ?? 'Unknown',
+                    'service_name' => $quota->doctorSchedule->service->name ?? 'Unknown',
+                    'total_quota' => $quota->total_quota,
+                    'used_quota' => $quota->used_quota,
+                    'available_quota' => $quota->available_quota,
+                    'usage_percentage' => $quota->usage_percentage,
+                    'status_color' => $quota->status_color,
+                    'status_label' => $quota->status_label,
+                    'formatted_quota' => $quota->formatted_quota,
+                    'time_range' => $quota->doctorSchedule->time_range ?? 'Unknown',
+                ];
+            })
+        ];
     }
 
     /**
@@ -109,7 +153,7 @@ class DashboardController extends Controller
     /**
      * ✅ FIXED: API ENDPOINT untuk update estimasi dengan tanggal antrian
      */
-    public function getRealtimeEstimation(Request $request)
+    public function realtimeEstimation(Request $request)
     {
         $userId = Auth::id();
         
