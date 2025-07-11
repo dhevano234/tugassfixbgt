@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - UPDATED: Simplified Doctor Sessions dengan Quota Check
+// File: app/Services/QueueService.php - FINAL: Complete with Today Only Restriction
 
 namespace App\Services;
 
@@ -404,24 +404,29 @@ class QueueService
     }
 
     /**
-     * ✅ UPDATED: Call next queue dengan session support
+     * ✅ FINAL: Call next queue dengan session support - DIBATASI HANYA HARI INI
      */
     public function callNextQueue($counterId)
     {
         $counter = Counter::findOrFail($counterId);
 
-        // ✅ Priority: Cari session-based queue dulu, lalu non-session
+        // ✅ PASTIKAN: Hanya cari antrian untuk hari ini (today) - TIDAK BOLEH BESOK
         $nextQueue = Queue::where('status', 'waiting')
             ->where('service_id', $counter->service_id)
             ->where(function ($query) use ($counterId) {
                 $query->whereNull('counter_id')->orWhere('counter_id', $counterId);
             })
-            ->whereDate('tanggal_antrian', today())
+            ->whereDate('tanggal_antrian', today()) // ✅ KUNCI UTAMA: HANYA HARI INI
             ->orderByRaw('doctor_id IS NULL ASC') // ✅ Session queues first
             ->orderBy('id')
             ->first();
 
         if ($nextQueue && !$nextQueue->counter_id) {
+            // ✅ VALIDASI TAMBAHAN: Double check tanggal sebelum update
+            if (!$nextQueue->tanggal_antrian->isToday()) {
+                throw new \Exception('Hanya antrian hari ini yang dapat dipanggil.');
+            }
+
             $nextQueue->update([
                 'counter_id' => $counterId,
                 'called_at' => now(),

@@ -14,7 +14,6 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         \App\Console\Commands\SendWhatsAppRemindersCommand::class,
         \App\Console\Commands\UpdateOverdueQueues::class,
-        \App\Console\Commands\TestFonnteCommand::class,
     ];
 
     protected function schedule(Schedule $schedule): void

@@ -11,6 +11,7 @@ use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\Builder;
 
 class QueueResource extends Resource
 {
@@ -28,6 +29,11 @@ class QueueResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(function (Builder $query) {
+                // ✅ PERUBAHAN UTAMA: Default tampilkan hanya antrian hari ini
+                return $query->whereDate('tanggal_antrian', today())
+                            ->orderBy('created_at', 'desc');
+            })
             ->columns([
                 Tables\Columns\TextColumn::make('number')
                     ->label('Nomor Antrian')
@@ -124,10 +130,21 @@ class QueueResource extends Resource
                     ->label('Layanan')
                     ->relationship('service', 'name'),
                     
-                Tables\Filters\Filter::make('created_at')
-                    ->label('Hari Ini')
-                    ->query(fn ($query) => $query->whereDate('created_at', today()))
-                    ->default(),
+                // ✅ PERUBAHAN: Filter tanggal dibatasi maksimal hari ini
+                Tables\Filters\Filter::make('tanggal_antrian')
+                    ->form([
+                        \Filament\Forms\Components\DatePicker::make('tanggal')
+                            ->label('Tanggal Antrian')
+                            ->default(today())
+                            ->maxDate(today()) // ✅ TIDAK BISA PILIH MASA DEPAN
+                            ->required(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['tanggal'],
+                            fn (Builder $query, $date): Builder => $query->whereDate('tanggal_antrian', $date),
+                        );
+                    }),
 
                 // ✅ TAMBAH: Filter untuk keluhan
                 Tables\Filters\Filter::make('has_complaint')
@@ -143,15 +160,29 @@ class QueueResource extends Resource
                     })),
             ])
             ->actions([
-                // ===== TOMBOL PANGGIL =====
+                // ===== TOMBOL PANGGIL - DIBATASI HARI INI =====
                 Action::make('call')
                     ->label('Panggil')
                     ->icon('heroicon-o-megaphone')
                     ->color('warning')
                     ->size('sm')
-                    ->visible(fn (Queue $record) => $record->status === 'waiting')
+                    ->visible(function (Queue $record) {
+                        // ✅ PERUBAHAN UTAMA: Hanya tampilkan untuk antrian hari ini
+                        return $record->status === 'waiting' && 
+                               $record->tanggal_antrian->isToday(); // ✅ HANYA HARI INI
+                    })
                     ->action(function (Queue $record, $livewire) {
                         try {
+                            // ✅ VALIDASI TAMBAHAN: Pastikan antrian adalah hari ini
+                            if (!$record->tanggal_antrian->isToday()) {
+                                Notification::make()
+                                    ->title('Error')
+                                    ->body('Hanya antrian hari ini yang dapat dipanggil.')
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+
                             $record->update([
                                 'status' => 'serving',
                                 'called_at' => now(),
@@ -184,7 +215,11 @@ class QueueResource extends Resource
                     })
                     ->requiresConfirmation()
                     ->modalHeading('Panggil Antrian')
-                    ->modalDescription(fn (Queue $record) => "Apakah Anda yakin ingin memanggil antrian {$record->number}?")
+                    ->modalDescription(function (Queue $record) {
+                        // ✅ PERUBAHAN: Tambah info tanggal
+                        $tanggal = $record->tanggal_antrian->format('d F Y');
+                        return "Apakah Anda yakin ingin memanggil antrian {$record->number} untuk tanggal {$tanggal}?";
+                    })
                     ->modalSubmitActionLabel('Ya, Panggil')
                     ->modalCancelActionLabel('Batal'),
 

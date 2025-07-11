@@ -143,16 +143,44 @@ class CounterResource extends Resource
                     ->query(fn ($query) => $query->whereHas('activeQueue')),
             ])
             ->actions([
-                // ===== ACTION PANGGIL ANTRIAN (MAIN FEATURE) =====
+                // ===== ACTION PANGGIL ANTRIAN - DIBATASI HARI INI =====
                 Action::make('callNextQueue')
                     ->label('Panggil')
                     ->icon('heroicon-o-speaker-wave')
                     ->color('warning')
                     ->size('sm')
                     ->button()
-                    ->visible(fn(Counter $record) => $record->hasNextQueue && $record->is_active)
+                    ->visible(function(Counter $record) {
+                        // ✅ PERUBAHAN UTAMA: Cek antrian hari ini saja
+                        if (!$record->is_active) {
+                            return false;
+                        }
+                        
+                        $hasQueueToday = \App\Models\Queue::where('status', 'waiting')
+                            ->where('service_id', $record->service_id)
+                            ->whereDate('tanggal_antrian', today()) // ✅ HANYA HARI INI
+                            ->exists();
+                            
+                        return $hasQueueToday;
+                    })
                     ->action(function (Counter $record, $livewire) {
                         try {
+                            // ✅ VALIDASI TAMBAHAN: Pastikan ada antrian hari ini
+                            $hasQueueToday = \App\Models\Queue::where('status', 'waiting')
+                                ->where('service_id', $record->service_id)
+                                ->whereDate('tanggal_antrian', today())
+                                ->exists();
+                                
+                            if (!$hasQueueToday) {
+                                Notification::make()
+                                    ->title('Tidak ada antrian')
+                                    ->body('Tidak ada antrian yang menunggu untuk hari ini.')
+                                    ->warning()
+                                    ->duration(5000)
+                                    ->send();
+                                return;
+                            }
+
                             // Get next queue using service
                             $nextQueue = app(QueueService::class)->callNextQueue($record->id);
 
@@ -227,10 +255,14 @@ class CounterResource extends Resource
                     })
                     ->requiresConfirmation()
                     ->modalHeading('Panggil Antrian Berikutnya')
-                    ->modalDescription(fn(Counter $record) => "Panggil antrian berikutnya untuk {$record->name}? Audio akan diputar secara otomatis.")
+                    ->modalDescription(function(Counter $record) {
+                        // ✅ PERUBAHAN: Tambah info pembatasan hari ini
+                        $todayDate = today()->format('d F Y');
+                        return "Panggil antrian berikutnya untuk {$record->name}? Hanya antrian tanggal {$todayDate} yang akan dipanggil. Audio akan diputar secara otomatis.";
+                    })
                     ->modalSubmitActionLabel('Ya, Panggil Sekarang')
                     ->modalCancelActionLabel('Batal')
-                    ->tooltip('Panggil antrian berikutnya dengan audio'),
+                    ->tooltip('Panggil antrian berikutnya dengan audio (hanya hari ini)'),
 
                 // ===== ACTION MULAI MELAYANI =====
                 Action::make('serve')
@@ -353,17 +385,24 @@ class CounterResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    // ===== BULK ACTION: PANGGIL MULTIPLE ANTRIAN =====
+                    // ===== BULK ACTION: PANGGIL MULTIPLE ANTRIAN - DIBATASI HARI INI =====
                     Tables\Actions\BulkAction::make('call_multiple')
                         ->label('Panggil Semua')
                         ->icon('heroicon-o-megaphone')
                         ->color('warning')
                         ->action(function ($records, $livewire) {
                             $called = 0;
+                            $skipped = 0;
                             $messages = [];
                             
                             foreach ($records as $record) {
-                                if ($record->hasNextQueue && $record->is_active) {
+                                // ✅ PERUBAHAN: Cek antrian hari ini dulu
+                                $hasQueueToday = \App\Models\Queue::where('status', 'waiting')
+                                    ->where('service_id', $record->service_id)
+                                    ->whereDate('tanggal_antrian', today())
+                                    ->exists();
+                                
+                                if ($hasQueueToday && $record->is_active) {
                                     try {
                                         $nextQueue = app(QueueService::class)->callNextQueue($record->id);
                                         
@@ -386,8 +425,10 @@ class CounterResource extends Resource
                                             }
                                         }
                                     } catch (\Exception $e) {
-                                        // Continue with next record
+                                        $skipped++;
                                     }
+                                } else {
+                                    $skipped++;
                                 }
                             }
                             
@@ -412,17 +453,19 @@ class CounterResource extends Resource
                                         }, index * 3000);
                                     });
                                 ");
-                            } else {
+                            }
+                            
+                            if ($skipped > 0) {
                                 Notification::make()
-                                    ->title('⚠️ Tidak ada antrian yang bisa dipanggil')
-                                    ->body('Pastikan loket aktif dan memiliki antrian yang menunggu')
+                                    ->title("⚠️ {$skipped} loket dilewati")
+                                    ->body('Hanya loket dengan antrian hari ini yang dipanggil')
                                     ->warning()
                                     ->send();
                             }
                         })
                         ->requiresConfirmation()
                         ->modalHeading('Panggil Multiple Antrian')
-                        ->modalDescription('Panggil semua antrian yang dipilih? Audio akan diputar dengan jeda 3 detik antar panggilan.')
+                        ->modalDescription('Panggil semua antrian yang dipilih? Hanya antrian hari ini yang akan dipanggil. Audio akan diputar dengan jeda 3 detik antar panggilan.')
                         ->deselectRecordsAfterCompletion(),
 
                     // ===== BULK ACTION: AKTIFKAN LOKET =====

@@ -87,7 +87,7 @@ class WhatsAppService
         
         return "🏥 *PENGINGAT ANTRIAN KLINIK*\n\n" .
                "Halo *{$queue->user->name}*,\n\n" .
-               "Antrian Anda akan dipanggil dalam waktu ±5 menit!\n\n" .
+               "Antrian Anda akan dipanggil dalam waktu ±10 menit!\n\n" .
                "📋 *Detail Antrian:*\n" .
                "• Nomor: *{$queue->number}*\n" .
                "• Layanan: *{$serviceName}*\n" .
