@@ -1,9 +1,10 @@
 <?php
-// File: bootstrap/app.php - Update untuk register middleware
+// File: bootstrap/app.php - Laravel 12 dengan Scheduler
 
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Console\Scheduling\Schedule;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -11,6 +12,18 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withSchedule(function (Schedule $schedule) {
+        // ✅ LARAVEL 12: Define scheduler di bootstrap
+        $schedule->command('whatsapp:send-reminders')
+                 ->everyMinute()
+                 ->withoutOverlapping()
+                 ->appendOutputTo(storage_path('logs/whatsapp-reminders.log'));
+                 
+        $schedule->command('queue:update-overdue')
+                 ->everyFiveMinutes()
+                 ->withoutOverlapping()
+                 ->appendOutputTo(storage_path('logs/queue-updates.log'));
+    })
     ->withMiddleware(function (Middleware $middleware) {
         // Register alias middleware untuk role checking
         $middleware->alias([
@@ -18,7 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role.dokter' => \App\Http\Middleware\EnsureDokterRole::class,
             'role.user' => \App\Http\Middleware\EnsureUserRole::class,
         ]);
-     $middleware->append([
+        
+        $middleware->append([
             // Middleware yang diterapkan ke semua request
         ]);
 

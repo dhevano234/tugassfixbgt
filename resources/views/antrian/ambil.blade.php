@@ -136,7 +136,7 @@
                         @enderror
                     </div>
 
-                    <!-- ✅ UPDATED: Dokter dropdown dengan session info -->
+                    {{-- ✅ FIXED: Dokter dropdown dengan event handling yang diperbaiki --}}
                     <div class="form-group">
                         <label for="doctor_id" class="form-label">Dokter <span class="required">*</span></label>
                         <div class="custom-dropdown" data-name="doctor_id">
@@ -150,7 +150,7 @@
                                     <i class="fas fa-search search-icon"></i>
                                 </div>
                                 <div class="dropdown-options" id="doctor-options">
-                                    <!-- Options akan diisi via JavaScript berdasarkan tanggal yang dipilih -->
+                                    {{-- Options akan diisi via JavaScript berdasarkan tanggal yang dipilih --}}
                                 </div>
                             </div>
                             <input type="hidden" name="doctor_id" id="doctor_id" value="{{ old('doctor_id') }}" required>
@@ -170,13 +170,7 @@
                         @enderror
                     </div>
 
-                    <!-- ✅ NEW: Session info display -->
-                    <div id="session-info" class="session-info full-width" style="display: none;">
-                        <div class="session-details">
-                            <h6><i class="fas fa-clock"></i> Informasi Sesi</h6>
-                            <div id="session-content"></div>
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
@@ -235,126 +229,10 @@
             </div>
         </form>
     </div>
-
-    {{-- Info Card: Antrian Terakhir --}}
-    @if(isset($antrianTerbaru) && $antrianTerbaru)
-        <div class="info-card mt-4">
-            <h6 class="info-title">
-                <i class="fas fa-info-circle"></i>
-                Antrian Terakhir Anda
-            </h6>
-            <div class="antrian-info">
-                <div class="antrian-number">
-                    <span class="number">{{ $antrianTerbaru->number ?? 'N/A' }}</span>
-                    <span class="status status-{{ strtolower($antrianTerbaru->status ?? 'pending') }}">
-                        {{ ucfirst($antrianTerbaru->status ?? 'Pending') }}
-                    </span>
-                </div>
-                
-                <div class="time-info">
-                    {{-- Tanggal Antrian (yang dipilih di date picker) --}}
-                    <div class="date-info main-date">
-                        <small><i class="fas fa-calendar-day"></i> 
-                            <strong>Tanggal Antrian:</strong> 
-                            {{ $antrianTerbaru->tanggal_antrian ? $antrianTerbaru->tanggal_antrian->format('d F Y') : 'Tidak diketahui' }}
-                        </small>
-                    </div>
-                    
-                    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #dee2e6;">
-                    
-                    {{-- Timeline pengambilan nomor --}}
-                    <div class="time-detail">
-                        <small><i class="fas fa-calendar"></i> Tanggal Ambil: 
-                            {{ $antrianTerbaru->created_at ? $antrianTerbaru->created_at->format('d F Y') : 'Tidak diketahui' }}
-                        </small>
-                    </div>
-                    
-                    <div class="time-detail">
-                        <small><i class="fas fa-clock"></i> Jam Ambil: 
-                            {{ $antrianTerbaru->created_at ? $antrianTerbaru->created_at->format('H:i') : '00:00' }} WIB
-                        </small>
-                    </div>
-                    
-                    @if($antrianTerbaru->called_at)
-                        <div class="time-detail">
-                            <small><i class="fas fa-bell"></i> Dipanggil: 
-                                {{ $antrianTerbaru->called_at->format('H:i') }} WIB
-                            </small>
-                        </div>
-                    @endif
-                    
-                    @if($antrianTerbaru->finished_at)
-                        <div class="time-detail">
-                            <small><i class="fas fa-check-circle"></i> Selesai: 
-                                {{ $antrianTerbaru->finished_at->format('H:i') }} WIB
-                            </small>
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-    @endif
 </main>
 
 <style>
-/* ✅ NEW: Session info styles */
-.session-info {
-    margin-top: 15px;
-    padding: 15px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #3498db;
-}
-
-.session-details h6 {
-    margin: 0 0 10px 0;
-    color: #2c3e50;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.session-content {
-    font-size: 14px;
-    color: #7f8c8d;
-}
-
-.session-content p {
-    margin: 5px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.session-content strong {
-    color: #2c3e50;
-}
-
-.session-status {
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.session-status.active {
-    background: #d4edda;
-    color: #155724;
-}
-
-.session-status.ending-soon {
-    background: #fff3cd;
-    color: #856404;
-}
-
-.session-status.ended {
-    background: #f8d7da;
-    color: #721c24;
-}
-
-/* ✅ UPDATE: Doctor option styles untuk session */
+/* ✅ UPDATED: Simplified Doctor option styles */
 .doctor-session-option {
     padding: 15px;
     border-bottom: 1px solid #ecf0f1;
@@ -399,7 +277,7 @@
     margin-top: 2px;
 }
 
-.session-status-badge {
+.quota-status-badge {
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 11px;
@@ -407,39 +285,28 @@
     text-transform: uppercase;
 }
 
+.quota-status-badge.available {
+    background: #d4edda;
+    color: #155724;
+}
+
+.quota-status-badge.full {
+    background: #f8d7da;
+    color: #721c24;
+}
+
 .doctor-session-details {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 15px;
-    margin-top: 10px;
-    padding-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid #ecf0f1;
 }
 
-.session-detail-item {
-    text-align: center;
-}
-
-.session-detail-label {
-    font-size: 11px;
-    color: #95a5a6;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 3px;
-}
-
-.session-detail-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: #2c3e50;
-}
-
-.queue-count-value {
-    color: #e67e22;
-}
-
-.estimated-time-value {
-    color: #27ae60;
+.session-time-info {
+    color: #7f8c8d;
+    font-size: 12px;
 }
 
 .loading-option, .error-option, .no-sessions-option {
@@ -454,16 +321,16 @@
 }
 
 @media (max-width: 768px) {
-    .doctor-session-details {
-        grid-template-columns: 1fr;
+    .doctor-main-info {
+        flex-direction: column;
+        align-items: flex-start;
         gap: 8px;
     }
     
-    .session-detail-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        text-align: left;
+    .doctor-session-details {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
     }
 }
 
@@ -705,112 +572,6 @@
 .btn-lg {
     padding: 15px 30px;
     font-size: 16px;
-}
-
-/* Info Card Styles untuk antrian terbaru */
-.info-card {
-    background: white;
-    border-radius: 15px;
-    padding: 25px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-    border-left: 5px solid #3498db;
-}
-
-.info-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #2c3e50;
-    margin-bottom: 15px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.info-title i {
-    color: #3498db;
-}
-
-.antrian-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.antrian-number {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.antrian-number .number {
-    font-size: 2rem;
-    font-weight: bold;
-    color: #2c3e50;
-    background: #ecf0f1;
-    padding: 10px 20px;
-    border-radius: 10px;
-    min-width: 80px;
-    text-align: center;
-}
-
-.status {
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.status-pending {
-    background: #fef3cd;
-    color: #856404;
-}
-
-.status-waiting {
-    background: #fef3cd;
-    color: #856404;
-}
-
-.status-called {
-    background: #d1ecf1;
-    color: #0c5460;
-}
-
-.status-finished {
-    background: #d4edda;
-    color: #155724;
-}
-
-.time-info {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    text-align: right;
-}
-
-.time-detail {
-    color: #6c757d;
-}
-
-.time-detail i {
-    width: 12px;
-    margin-right: 5px;
-}
-
-/* Style untuk tanggal antrian */
-.main-date {
-    background: #f8f9fa;
-    padding: 8px 12px;
-    border-radius: 6px;
-    border-left: 3px solid #3498db;
-    margin-bottom: 8px;
-}
-
-.main-date strong {
-    color: #2c3e50;
-    font-weight: 600;
 }
 
 /* Date Picker Styles */
@@ -1094,16 +855,6 @@
         grid-column: span 1;
     }
 
-    .antrian-info {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .time-info {
-        text-align: left;
-        width: 100%;
-    }
-
     .custom-dropdown .dropdown-menu {
         max-height: 250px;
         position: absolute;
@@ -1186,10 +937,66 @@ document.addEventListener('DOMContentLoaded', function() {
     const tanggalInput = document.getElementById('tanggal');
     const doctorDropdown = document.querySelector('[data-name="doctor_id"]');
     const doctorOptions = document.getElementById('doctor-options');
-    const sessionInfo = document.getElementById('session-info');
-    const sessionContent = document.getElementById('session-content');
     
-    // ✅ FIXED: Update doctor options saat tanggal berubah
+    // ✅ CORE FIX: Dedicated doctor option click handler
+    function handleDoctorOptionClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const sessionInfo = JSON.parse(this.getAttribute('data-session-info'));
+        
+        console.log('Doctor option clicked!', sessionInfo.doctor_name);
+        
+        // Select doctor
+        selectDoctorSession(this, sessionInfo);
+        
+        // ✅ CRITICAL: Force close dropdown
+        forceCloseDropdown(doctorDropdown);
+    }
+    
+    // ✅ CORE FIX: Manual event attachment after AJAX
+    function attachDoctorClickListeners() {
+        const doctorSessionOptions = doctorOptions.querySelectorAll('.doctor-session-option:not(.unavailable)');
+        
+        console.log('Attached listeners to', doctorSessionOptions.length, 'options');
+        
+        doctorSessionOptions.forEach(option => {
+            // ✅ Prevent double binding
+            option.removeEventListener('click', handleDoctorOptionClick);
+            option.addEventListener('click', handleDoctorOptionClick);
+        });
+    }
+    
+    // ✅ CORE FIX: Aggressive force close function
+    function forceCloseDropdown(dropdown) {
+        if (!dropdown) return;
+        
+        const trigger = dropdown.querySelector('.dropdown-trigger');
+        const menu = dropdown.querySelector('.dropdown-menu');
+        const backdrop = document.querySelector('.dropdown-backdrop');
+        
+        // Force remove classes
+        trigger.classList.remove('active');
+        menu.classList.remove('show');
+        
+        if (backdrop) {
+            backdrop.classList.remove('show');
+        }
+        
+        // Clear search
+        const searchInput = dropdown.querySelector('.search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            // Show all options again
+            dropdown.querySelectorAll('.dropdown-option').forEach(option => {
+                option.classList.remove('hidden');
+            });
+        }
+        
+        console.log('Dropdown force closed');
+    }
+    
+    // ✅ FIXED: Update doctor sessions dengan quota check
     function updateDoctorSessions(selectedDate) {
         if (!selectedDate) return;
         
@@ -1197,12 +1004,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Show loading
         if (doctorOptions) {
-            doctorOptions.innerHTML = '<div class="loading-option"><i class="fas fa-spinner fa-spin"></i> Memuat sesi dokter...</div>';
+            doctorOptions.innerHTML = '<div class="loading-option"><i class="fas fa-spinner fa-spin"></i> Memuat dokter tersedia...</div>';
         }
         
-        // Fetch available sessions dengan parameter yang benar
+        // Fetch available sessions
         const url = `/api/antrian/available-sessions?tanggal=${encodeURIComponent(selectedDate)}`;
-        console.log('Fetching from URL:', url);
         
         fetch(url, {
             method: 'GET',
@@ -1224,19 +1030,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateDoctorDropdownOptions(data.sessions, selectedDate);
             } else {
                 if (doctorOptions) {
-                    doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Gagal memuat sesi dokter</div>';
+                    doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Gagal memuat dokter</div>';
                 }
             }
         })
         .catch(error => {
             console.error('Error fetching sessions:', error);
             if (doctorOptions) {
-                doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Terjadi kesalahan memuat sesi</div>';
+                doctorOptions.innerHTML = '<div class="error-option"><i class="fas fa-exclamation-triangle"></i> Terjadi kesalahan memuat dokter</div>';
             }
         });
     }
     
-    // ✅ FIXED: Update dropdown options dengan session info yang benar
+    // ✅ FIXED: Simplified dropdown options dengan manual event attach
     function updateDoctorDropdownOptions(sessions, selectedDate) {
         if (!doctorOptions) return;
         
@@ -1253,55 +1059,11 @@ document.addEventListener('DOMContentLoaded', function() {
         let optionsHTML = '';
         
         sessions.forEach(session => {
-            // ✅ PERBAIKAN: Cek apakah tanggal yang dipilih adalah hari ini
-            const selectedDateObj = new Date(selectedDate);
-            const todayDateObj = new Date();
-            
-            // Normalisasi tanggal (set jam ke 00:00:00)
-            selectedDateObj.setHours(0, 0, 0, 0);
-            todayDateObj.setHours(0, 0, 0, 0);
-            
-            const isSelectedDateToday = selectedDateObj.getTime() === todayDateObj.getTime();
-            
-            let isSessionEnded = false;
-            let isSessionEndingSoon = false;
-            
-            // ✅ PERBAIKAN: Hanya cek waktu jika tanggal yang dipilih adalah hari ini
-            if (isSelectedDateToday) {
-                const currentTime = new Date().toTimeString().split(' ')[0].substring(0, 5);
-                const sessionEndTime = session.end_time;
-                
-                isSessionEnded = currentTime >= sessionEndTime;
-                
-                // Cek apakah session akan berakhir dalam 1 jam
-                const currentHour = parseInt(currentTime.split(':')[0]);
-                const sessionEndHour = parseInt(sessionEndTime.split(':')[0]);
-                isSessionEndingSoon = (sessionEndHour - currentHour) <= 1 && (sessionEndHour - currentHour) > 0;
-            }
-            
-            // ✅ PERBAIKAN: Untuk tanggal besok atau masa depan, semua session available
-            let statusClass = 'active';
-            let statusText = 'Tersedia';
-            
-            if (isSelectedDateToday) {
-                if (isSessionEnded) {
-                    statusClass = 'ended';
-                    statusText = 'Selesai';
-                } else if (isSessionEndingSoon) {
-                    statusClass = 'ending-soon';
-                    statusText = 'Segera Berakhir';
-                }
-            } else {
-                // Untuk tanggal masa depan, semua session tersedia
-                statusClass = 'active';
-                statusText = 'Tersedia';
-            }
-            
-            // ✅ PERBAIKAN: Session hanya unavailable jika hari ini DAN sudah berakhir
-            const isUnavailable = isSelectedDateToday && isSessionEnded;
+            const isAvailable = session.is_available;
+            const quotaStatus = session.quota_status;
             
             optionsHTML += `
-                <div class="dropdown-option doctor-session-option ${isUnavailable ? 'unavailable' : ''}" 
+                <div class="dropdown-option doctor-session-option ${!isAvailable ? 'unavailable' : ''}" 
                      data-value="${session.id}" 
                      data-text="${session.doctor_name}"
                      data-session-info='${JSON.stringify(session)}'>
@@ -1311,22 +1073,18 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div class="doctor-name-session">${session.doctor_name}</div>
                             <div class="doctor-service-session">${session.service_name}</div>
                         </div>
-                        <div class="session-status-badge ${statusClass}">${statusText}</div>
+                        <div class="quota-status-badge ${isAvailable ? 'available' : 'full'}">${quotaStatus}</div>
                     </div>
                     
                     <div class="doctor-session-details">
-                        <div class="session-detail-item">
-                            <div class="session-detail-label">Jam Praktik</div>
-                            <div class="session-detail-value">${session.time_range}</div>
+                        <div class="session-time-info">
+                            <i class="fas fa-clock"></i> ${session.time_range}
                         </div>
-                        <div class="session-detail-item">
-                            <div class="session-detail-label">Antrian Saat Ini</div>
-                            <div class="session-detail-value queue-count-value">${session.queue_count} orang</div>
-                        </div>
-                        <div class="session-detail-item">
-                            <div class="session-detail-label">Estimasi</div>
-                            <div class="session-detail-value estimated-time-value">~${session.estimated_wait} menit</div>
-                        </div>
+                        ${session.quota_info ? `
+                            <div class="session-time-info">
+                                <i class="fas fa-users"></i> ${session.quota_info.remaining}/${session.quota_info.total} slot tersisa
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -1334,27 +1092,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         doctorOptions.innerHTML = optionsHTML;
         
-        // ✅ Re-attach event listeners untuk session options
-        attachSessionOptionListeners();
+        // ✅ CRITICAL: Manual attach event listeners
+        attachDoctorClickListeners();
     }
     
-    // ✅ Attach listeners untuk session options
-    function attachSessionOptionListeners() {
-        const sessionOptions = doctorOptions.querySelectorAll('.doctor-session-option:not(.unavailable)');
-        
-        sessionOptions.forEach(option => {
-            option.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const sessionInfo = JSON.parse(this.getAttribute('data-session-info'));
-                selectDoctorSession(this, sessionInfo);
-                closeDropdown(doctorDropdown);
-            });
-        });
-    }
-    
-    // ✅ Select doctor session
+    // ✅ FIXED: Select doctor session (simplified - no session info display)
     function selectDoctorSession(optionElement, sessionInfo) {
         const hiddenInput = doctorDropdown.querySelector('input[type="hidden"]');
         const dropdownText = doctorDropdown.querySelector('.dropdown-text');
@@ -1370,85 +1112,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         optionElement.classList.add('selected');
         
-        // Show session info
-        showSessionInfo(sessionInfo);
-        
-        // Validate session real-time
-        validateSessionRealtime(sessionInfo.id);
+        console.log('Doctor selected:', sessionInfo.doctor_name);
     }
     
-    // ✅ FIXED: Show session info dengan informasi tanggal yang benar
-    function showSessionInfo(sessionInfo) {
-        if (!sessionInfo || !sessionContent) return;
-        
-        const selectedDate = tanggalInput?.value;
-        const selectedDateObj = new Date(selectedDate);
-        const todayDateObj = new Date();
-        
-        // Normalisasi tanggal
-        selectedDateObj.setHours(0, 0, 0, 0);
-        todayDateObj.setHours(0, 0, 0, 0);
-        
-        const isSelectedDateToday = selectedDateObj.getTime() === todayDateObj.getTime();
-        const isFutureDate = selectedDateObj.getTime() > todayDateObj.getTime();
-        
-        let dateStatusText = '';
-        if (isSelectedDateToday) {
-            dateStatusText = '<p class="text-info"><small><i class="fas fa-info-circle"></i> Antrian untuk hari ini - estimasi dapat berubah sesuai kondisi antrian</small></p>';
-        } else if (isFutureDate) {
-            const dateString = selectedDateObj.toLocaleDateString('id-ID', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            });
-            dateStatusText = `<p class="text-success"><small><i class="fas fa-calendar-check"></i> Antrian untuk ${dateString}</small></p>`;
-        }
-        
-        sessionContent.innerHTML = `
-            <p><strong>Dokter:</strong> <span>${sessionInfo.doctor_name}</span></p>
-            <p><strong>Layanan:</strong> <span>${sessionInfo.service_name}</span></p>
-            <p><strong>Jam Praktik:</strong> <span>${sessionInfo.time_range}</span></p>
-            <p><strong>Antrian Saat Ini:</strong> <span>${sessionInfo.queue_count} orang</span></p>
-            <p><strong>Nomor Antrian Anda:</strong> <span class="text-primary font-weight-bold">${sessionInfo.next_queue_number}</span></p>
-            <p><strong>Estimasi Tunggu:</strong> <span>~${sessionInfo.estimated_wait} menit</span></p>
-            ${dateStatusText}
-        `;
-        
-        sessionInfo.style.display = 'block';
-    }
+    // ✅ REMOVED: showSessionInfo function - tidak perlu lagi
     
-    // ✅ Validate session real-time
-    function validateSessionRealtime(doctorId) {
-        const selectedDate = tanggalInput?.value;
-        if (!doctorId || !selectedDate) return;
-        
-        fetch('/api/antrian/validate-doctor-session', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-            },
-            body: JSON.stringify({
-                doctor_id: doctorId,
-                tanggal: selectedDate
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.valid) {
-                // Show error dan reset selection
-                alert(data.message);
-                resetDoctorSelection();
-            }
-        })
-        .catch(error => {
-            console.error('Session validation error:', error);
-        });
-    }
-    
-    // ✅ Reset doctor selection
+    // ✅ FIXED: Reset doctor selection (simplified)
     function resetDoctorSelection() {
         const hiddenInput = doctorDropdown.querySelector('input[type="hidden"]');
         const dropdownText = doctorDropdown.querySelector('.dropdown-text');
@@ -1457,29 +1126,59 @@ document.addEventListener('DOMContentLoaded', function() {
         dropdownText.textContent = '-- Pilih Dokter --';
         dropdownText.classList.add('placeholder');
         
-        sessionInfo.style.display = 'none';
-        
         doctorOptions.querySelectorAll('.dropdown-option').forEach(opt => {
             opt.classList.remove('selected');
         });
     }
     
-    // ✅ Helper function untuk close dropdown
+    // ✅ FIXED: Close dropdown function (untuk service dropdown)
     function closeDropdown(dropdown) {
+        if (!dropdown) return;
+        
         const trigger = dropdown.querySelector('.dropdown-trigger');
         const menu = dropdown.querySelector('.dropdown-menu');
+        const backdrop = document.querySelector('.dropdown-backdrop');
         
+        // Remove active states
         trigger.classList.remove('active');
         menu.classList.remove('show');
+        
+        // Hide backdrop
+        if (backdrop) {
+            backdrop.classList.remove('show');
+        }
+        
+        // Clear search if exists
+        const searchInput = dropdown.querySelector('.search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            dropdown.querySelectorAll('.dropdown-option').forEach(option => {
+                option.classList.remove('hidden');
+            });
+        }
     }
     
-    // ✅ ENHANCED: Event listener untuk perubahan tanggal yang lebih robust
+    // ✅ Close all dropdowns
+    function closeAllDropdowns() {
+        const dropdowns = document.querySelectorAll('.custom-dropdown');
+        dropdowns.forEach(dropdown => {
+            const dropdownName = dropdown.getAttribute('data-name');
+            if (dropdownName === 'doctor_id') {
+                // Use force close for doctor dropdown
+                forceCloseDropdown(dropdown);
+            } else {
+                // Use normal close for other dropdowns
+                closeDropdown(dropdown);
+            }
+        });
+    }
+    
+    // ✅ FIXED: Date change handler
     function initDateChangeHandler() {
         const tanggalAntrianPicker = document.getElementById('tanggal-antrian-picker');
         const hiddenTanggalInput = document.getElementById('tanggal');
         
         if (tanggalAntrianPicker) {
-            // Event delegation untuk date options
             tanggalAntrianPicker.addEventListener('click', function(e) {
                 const dateOption = e.target.closest('.date-option');
                 if (!dateOption) return;
@@ -1498,19 +1197,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 console.log('Date changed to:', selectedDate);
                 
-                // ✅ PERBAIKAN: Reset doctor selection dan update sessions
+                // Reset doctor selection and update sessions
                 resetDoctorSelection();
                 updateDoctorSessions(selectedDate);
             });
         }
         
-        // ✅ Backup: Direct input change handler
         if (hiddenTanggalInput) {
             hiddenTanggalInput.addEventListener('change', function() {
                 const selectedDate = this.value;
                 console.log('Hidden input date changed to:', selectedDate);
                 
-                // Update visual picker jika ada
+                // Update visual picker
                 if (tanggalAntrianPicker) {
                     tanggalAntrianPicker.querySelectorAll('.date-option').forEach(option => {
                         option.classList.remove('selected');
@@ -1533,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('antrianForm');
     const submitBtn = document.getElementById('submitBtn');
 
-    // Initialize Custom Dropdowns
+    // ✅ FIXED: Initialize Custom Dropdowns (service dropdown menggunakan static handling)
     initCustomDropdowns();
 
     // Initialize character counter for chief_complaint
@@ -1558,8 +1256,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!tanggalInput || !tanggalInput.value) {
                 e.preventDefault();
                 alert('Harap pilih tanggal antrian!');
-                
-                // Re-render date picker jika error
                 renderDateOptions();
                 return;
             }
@@ -1589,11 +1285,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 submitBtn.classList.add('btn-loading');
                 submitBtn.innerHTML = '<i class="fas fa-spinner"></i> Memproses...';
             }
-
-            // Log untuk debugging
-            if (chiefComplaint) {
-                console.log('Keluhan akan disimpan:', chiefComplaint.substring(0, 100) + '...');
-            }
         });
     }
 
@@ -1609,25 +1300,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const charCountElement = document.getElementById('char-count');
         
         if (chiefComplaintTextarea && charCountElement) {
-            // Update counter on input
             chiefComplaintTextarea.addEventListener('input', function() {
                 const currentLength = this.value.length;
                 charCountElement.textContent = currentLength;
                 
-                // Change color based on length
                 if (currentLength > 900) {
-                    charCountElement.style.color = '#e74c3c'; // Red when approaching limit
+                    charCountElement.style.color = '#e74c3c';
                 } else if (currentLength > 700) {
-                    charCountElement.style.color = '#f39c12'; // Orange when getting long
+                    charCountElement.style.color = '#f39c12';
                 } else {
-                    charCountElement.style.color = '#7f8c8d'; // Default gray
+                    charCountElement.style.color = '#7f8c8d';
                 }
             });
             
-            // Initial count
             chiefComplaintTextarea.dispatchEvent(new Event('input'));
             
-            // Auto-resize textarea (optional enhancement)
             chiefComplaintTextarea.addEventListener('input', function() {
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 200) + 'px';
@@ -1635,11 +1322,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // ✅ FIXED: Custom dropdown initialization dengan pemisahan sistem
     function initCustomDropdowns() {
         const dropdowns = document.querySelectorAll('.custom-dropdown');
         let backdrop = null;
 
         dropdowns.forEach(dropdown => {
+            const dropdownName = dropdown.getAttribute('data-name');
             const trigger = dropdown.querySelector('.dropdown-trigger');
             const menu = dropdown.querySelector('.dropdown-menu');
             const options = dropdown.querySelectorAll('.dropdown-option');
@@ -1663,8 +1352,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Trigger click
-            trigger.addEventListener('click', function(e) {
+            // ✅ FIXED: Trigger click dengan prevent double binding
+            trigger.removeEventListener('click', handleTriggerClick);
+            trigger.addEventListener('click', handleTriggerClick);
+            
+            function handleTriggerClick(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 
@@ -1675,28 +1367,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 const isOpen = menu.classList.contains('show');
                 if (!isOpen) {
                     openDropdown(dropdown);
-                } else {
-                    closeDropdown(dropdown);
                 }
-            });
+            }
 
-            // Option click
-            options.forEach(option => {
-                if (!option.classList.contains('disabled')) {
-                    option.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        selectOption(this, dropdown);
-                        closeDropdown(dropdown);
-                    });
-                }
-            });
+            // ✅ FIXED: Pisahkan event handling berdasarkan dropdown type
+            if (dropdownName === 'service_id') {
+                // Service dropdown: Static options, normal event handling
+                options.forEach(option => {
+                    if (!option.classList.contains('disabled')) {
+                        option.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            selectOption(this, dropdown);
+                            closeDropdown(dropdown);
+                        });
+                    }
+                });
+            }
+            // Doctor dropdown akan menggunakan event delegation yang sudah diatur di attachDoctorClickListeners()
 
             // Search functionality
             if (searchInput) {
                 searchInput.addEventListener('input', function() {
                     const query = this.value.toLowerCase();
-                    options.forEach(option => {
+                    const searchOptions = dropdown.querySelectorAll('.dropdown-option');
+                    searchOptions.forEach(option => {
                         if (!option.classList.contains('disabled')) {
                             const text = option.textContent.toLowerCase();
                             if (text.includes(query)) {
@@ -1754,30 +1449,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        function closeDropdown(dropdown) {
-            const trigger = dropdown.querySelector('.dropdown-trigger');
-            const menu = dropdown.querySelector('.dropdown-menu');
-            const searchInput = dropdown.querySelector('.search-input');
-
-            trigger.classList.remove('active');
-            menu.classList.remove('show');
-            backdrop.classList.remove('show');
-
-            // Clear search
-            if (searchInput) {
-                searchInput.value = '';
-                dropdown.querySelectorAll('.dropdown-option').forEach(option => {
-                    option.classList.remove('hidden');
-                });
-            }
-        }
-
-        function closeAllDropdowns() {
-            dropdowns.forEach(dropdown => {
-                closeDropdown(dropdown);
-            });
-        }
-
         function selectOption(option, dropdown) {
             const value = option.getAttribute('data-value');
             const text = option.getAttribute('data-text') || option.textContent.trim();
@@ -1800,19 +1471,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Remove invalid state
             const trigger = dropdown.querySelector('.dropdown-trigger');
             trigger.classList.remove('is-invalid');
-
-            // Debug log untuk memastikan doctor_id tersimpan
-            if (dropdown.getAttribute('data-name') === 'doctor_id') {
-                console.log('Doctor selected:', {
-                    value: value,
-                    text: text,
-                    hiddenInputValue: hiddenInput.value
-                });
-            }
         }
     }
 
-    // --- Custom Date Picker Logic dengan Auto-refresh ---
+    // Date Picker Logic
     const tanggalAntrianPicker = document.getElementById('tanggal-antrian-picker');
     const hiddenTanggalInput = document.getElementById('tanggal');
 
@@ -1936,7 +1598,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ✅ Initial load dengan tanggal yang sudah dipilih atau hari ini
+    // Initial load dengan tanggal yang sudah dipilih atau hari ini
     const initialDate = hiddenTanggalInput?.value || formatDateForInput(getCurrentDate());
     console.log('Initial date load:', initialDate);
     updateDoctorSessions(initialDate);

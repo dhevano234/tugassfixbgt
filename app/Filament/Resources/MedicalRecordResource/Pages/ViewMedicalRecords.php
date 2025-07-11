@@ -12,7 +12,7 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 
-class ViewMedicalRecord extends ViewRecord
+class ViewMedicalRecords extends ViewRecord
 {
     protected static string $resource = MedicalRecordResource::class;
 

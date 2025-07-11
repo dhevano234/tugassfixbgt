@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - FINAL dengan Session Support dan Quota Integration
+// File: app/Services/QueueService.php - UPDATED: Simplified Doctor Sessions dengan Quota Check
 
 namespace App\Services;
 
@@ -15,6 +15,59 @@ use Carbon\Carbon;
 
 class QueueService
 {
+    /**
+     * ✅ UPDATED: Get available doctor sessions - Simplified dengan quota check
+     */
+    public function getAvailableDoctorSessions($tanggalAntrian)
+    {
+        $tanggalCarbon = Carbon::parse($tanggalAntrian);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        // ✅ PERBAIKAN: Hanya cek waktu jika tanggal adalah hari ini
+        $isToday = $tanggalCarbon->isToday();
+        $currentTime = $isToday ? now()->format('H:i') : '00:00';
+        
+        $doctors = DoctorSchedule::where('is_active', true)
+            ->whereJsonContains('days', $dayOfWeek)
+            ->where(function($query) use ($isToday, $currentTime) {
+                // ✅ PERBAIKAN: Jika bukan hari ini, semua session available
+                if (!$isToday) {
+                    // Untuk tanggal masa depan, tidak perlu filter waktu
+                    return;
+                }
+                // ✅ Jika hari ini, hanya session yang belum selesai
+                $query->whereTime('end_time', '>', $currentTime);
+            })
+            ->with('service')
+            ->get();
+            
+        return $doctors->map(function($doctor) use ($tanggalAntrian, $isToday) {
+            // ✅ UPDATED: Cek quota availability
+            $quotaCheck = $this->checkQuotaAvailability($doctor->id, $tanggalAntrian);
+            
+            return [
+                'id' => $doctor->id,
+                'doctor_name' => $doctor->doctor_name,
+                'service_name' => $doctor->service->name ?? 'Unknown',
+                'start_time' => $doctor->start_time->format('H:i'),
+                'end_time' => $doctor->end_time->format('H:i'),
+                'time_range' => $doctor->start_time->format('H:i') . ' - ' . $doctor->end_time->format('H:i'),
+                'is_available' => $quotaCheck['available'],
+                'quota_status' => $quotaCheck['available'] ? 'Tersedia' : 'Penuh',
+                'quota_info' => $quotaCheck['quota'] ? [
+                    'used' => $quotaCheck['quota']->used_quota,
+                    'total' => $quotaCheck['quota']->total_quota,
+                    'remaining' => $quotaCheck['quota']->available_quota
+                ] : null,
+                'is_today' => $isToday,
+                'selected_date' => $tanggalAntrian
+            ];
+        })->filter(function($session) {
+            // ✅ UPDATED: Filter hanya yang tersedia (ada quota)
+            return $session['is_available'];
+        });
+    }
+
     /**
      * ✅ UPDATED: Add queue dengan session dokter support dan quota checking
      */
@@ -258,54 +311,6 @@ class QueueService
                 'extra_delay_minutes' => $sessionDelay
             ]);
         }
-    }
-
-    /**
-     * ✅ FIXED: Get available doctor sessions for specific date
-     */
-    public function getAvailableDoctorSessions($tanggalAntrian)
-    {
-        $tanggalCarbon = Carbon::parse($tanggalAntrian);
-        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
-        
-        // ✅ PERBAIKAN: Hanya cek waktu jika tanggal adalah hari ini
-        $isToday = $tanggalCarbon->isToday();
-        $currentTime = $isToday ? now()->format('H:i') : '00:00';
-        
-        return DoctorSchedule::where('is_active', true)
-            ->whereJsonContains('days', $dayOfWeek)
-            ->where(function($query) use ($isToday, $currentTime) {
-                // ✅ PERBAIKAN: Jika bukan hari ini, semua session available
-                if (!$isToday) {
-                    // Untuk tanggal masa depan, tidak perlu filter waktu
-                    return;
-                }
-                // ✅ Jika hari ini, hanya session yang belum selesai
-                $query->whereTime('end_time', '>', $currentTime);
-            })
-            ->with('service')
-            ->get()
-            ->map(function($doctor) use ($tanggalAntrian, $isToday) {
-                $queueCount = Queue::where('doctor_id', $doctor->id)
-                    ->whereDate('tanggal_antrian', $tanggalAntrian)
-                    ->where('status', 'waiting')
-                    ->count();
-                
-                return [
-                    'id' => $doctor->id,
-                    'doctor_name' => $doctor->doctor_name,
-                    'service_name' => $doctor->service->name ?? 'Unknown',
-                    'start_time' => $doctor->start_time->format('H:i'),
-                    'end_time' => $doctor->end_time->format('H:i'),
-                    'time_range' => $doctor->start_time->format('H:i') . ' - ' . $doctor->end_time->format('H:i'),
-                    'queue_count' => $queueCount,
-                    'estimated_wait' => ($queueCount + 1) * 15,
-                    'next_queue_number' => $this->generateNumberForSession($doctor->service_id, $tanggalAntrian, $doctor->id),
-                    'is_available' => true,
-                    'is_today' => $isToday, // ✅ TAMBAH info apakah hari ini
-                    'selected_date' => $tanggalAntrian // ✅ TAMBAH info tanggal yang dipilih
-                ];
-            });
     }
 
     /**

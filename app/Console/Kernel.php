@@ -1,5 +1,5 @@
 <?php
-// File: app/Console/Kernel.php - CORRECT AND SIMPLE VERSION
+// File: app/Console/Kernel.php - FINAL WORKING VERSION
 
 namespace App\Console;
 
@@ -9,14 +9,34 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 class Kernel extends ConsoleKernel
 {
     /**
-     * Define the application's command schedule.
+     * The Artisan commands provided by your application.
      */
+    protected $commands = [
+        \App\Console\Commands\SendWhatsAppRemindersCommand::class,
+        \App\Console\Commands\UpdateOverdueQueues::class,
+        \App\Console\Commands\TestFonnteCommand::class,
+    ];
+
     protected function schedule(Schedule $schedule): void
     {
-        // ✅ HANYA INI YANG DIPERLUKAN: Update estimasi antrian yang overdue setiap 5 menit
+        // ✅ WORKING: WhatsApp reminder setiap menit
+        $schedule->command('whatsapp:send-reminders')
+                 ->everyMinute()
+                 ->between('00:00', '23:59') // Testing: allow all hours
+                 ->withoutOverlapping()
+                 ->runInBackground()
+                 ->appendOutputTo(storage_path('logs/whatsapp-reminders.log'))
+                 ->onSuccess(function () {
+                     \Illuminate\Support\Facades\Log::info('WhatsApp reminders check completed successfully');
+                 })
+                 ->onFailure(function () {
+                     \Illuminate\Support\Facades\Log::error('WhatsApp reminders check failed');
+                 });
+
+        // ✅ WORKING: Update overdue queues setiap 5 menit
         $schedule->command('queue:update-overdue')
                  ->everyFiveMinutes()
-                 ->between('07:00', '22:00') // Hanya jam operasional klinik
+                 ->between('00:00', '23:59') // Testing: allow all hours
                  ->withoutOverlapping()
                  ->runInBackground()
                  ->appendOutputTo(storage_path('logs/queue-updates.log'))
@@ -28,13 +48,9 @@ class Kernel extends ConsoleKernel
                  });
     }
 
-    /**
-     * Register the commands for the application.
-     */
     protected function commands(): void
     {
         $this->load(__DIR__.'/Commands');
-
         require base_path('routes/console.php');
     }
 }

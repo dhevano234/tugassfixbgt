@@ -21,6 +21,7 @@ class Queue extends Model
         'chief_complaint',
         'estimated_call_time', // ✅ ESTIMASI WAKTU PANGGILAN
         'extra_delay_minutes', // ✅ EXTRA DELAY 5 MENIT
+        'whatsapp_reminder_sent_at',
         'called_at',
         'served_at',
         'canceled_at',
@@ -34,6 +35,7 @@ class Queue extends Model
         'served_at' => 'datetime', 
         'canceled_at' => 'datetime',
         'finished_at' => 'datetime',
+        'whatsapp_reminder_sent_at',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
