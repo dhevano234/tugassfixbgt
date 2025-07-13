@@ -1,5 +1,5 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource.php - PERBAIKAN AUTO-FILL KELUHAN
+// File: app/Filament/Dokter/Resources/MedicalRecordResource.php - FINAL: AUTO-FILL dari Medical Record
 
 namespace App\Filament\Dokter\Resources;
 
@@ -70,17 +70,15 @@ class MedicalRecordResource extends Resource
                                                 $set('display_medical_record_number', 'Belum ada nomor rekam medis');
                                             }
 
-                                            // ✅ PERBAIKAN: AUTO-FILL KELUHAN dari antrian terbaru yang aktif
-                                            $latestComplaint = \App\Models\Queue::where('user_id', $state)
+                                            // ✅ FIXED: AUTO-FILL KELUHAN dari MEDICAL RECORD terbaru (tanpa notifikasi)
+                                            $latestMedicalRecord = \App\Models\MedicalRecord::where('user_id', $state)
                                                 ->whereNotNull('chief_complaint')
                                                 ->where('chief_complaint', '!=', '')
-                                                ->whereIn('status', ['waiting', 'serving']) // ✅ Hanya antrian aktif
-                                                ->whereDate('created_at', today()) // ✅ Hanya hari ini
                                                 ->latest('created_at')
                                                 ->first();
 
-                                            if ($latestComplaint && $latestComplaint->chief_complaint) {
-                                                $set('chief_complaint', $latestComplaint->chief_complaint);
+                                            if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                                                $set('chief_complaint', $latestMedicalRecord->chief_complaint);
                                             }
                                         } else {
                                             $set('display_medical_record_number', '');
@@ -113,65 +111,44 @@ class MedicalRecordResource extends Resource
                             ->columnSpanFull()
                             ->reactive()
                             ->afterStateHydrated(function ($component, $state, $record) {
-                                // ✅ PERBAIKAN: AUTO-FILL dari antrian jika ada saat load form
+                                // ✅ FIXED: AUTO-FILL dari MEDICAL RECORD jika ada saat load form
                                 if (!$state && !$record) { // Hanya saat create baru
                                     $userId = request()->get('user_id');
                                     $queueNumber = request()->get('queue_number');
                                     
                                     if ($userId) {
-                                        // ✅ PERBAIKAN: Cari antrian terbaru user yang ada keluhan DAN masih aktif
-                                        $queueWithComplaint = \App\Models\Queue::where('user_id', $userId)
+                                        // ✅ FIXED: Cari dari medical record terbaru
+                                        $latestMedicalRecord = \App\Models\MedicalRecord::where('user_id', $userId)
                                             ->whereNotNull('chief_complaint')
                                             ->where('chief_complaint', '!=', '')
-                                            ->whereIn('status', ['waiting', 'serving']) // ✅ TAMBAH: hanya antrian aktif
-                                            ->whereDate('created_at', today()) // ✅ TAMBAH: hanya hari ini
                                             ->latest('created_at')
                                             ->first();
                                         
-                                        if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
-                                            $component->state($queueWithComplaint->chief_complaint);
+                                        if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                                            $component->state($latestMedicalRecord->chief_complaint);
                                         }
                                     } elseif ($queueNumber) {
-                                        // Cari berdasarkan nomor antrian
+                                        // Jika dari queue, cari user dari queue tersebut
                                         $queue = \App\Models\Queue::where('number', $queueNumber)
                                             ->whereDate('created_at', today())
+                                            ->with('user')
                                             ->first();
                                             
-                                        if ($queue && $queue->chief_complaint) {
-                                            $component->state($queue->chief_complaint);
+                                        if ($queue && $queue->user) {
+                                            $latestMedicalRecord = \App\Models\MedicalRecord::where('user_id', $queue->user_id)
+                                                ->whereNotNull('chief_complaint')
+                                                ->where('chief_complaint', '!=', '')
+                                                ->latest('created_at')
+                                                ->first();
+                                                
+                                            if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                                                $component->state($latestMedicalRecord->chief_complaint);
+                                            }
                                         }
                                     }
                                 }
                             })
-                            ->helperText(function () {
-                                $userId = request()->get('user_id');
-                                $queueNumber = request()->get('queue_number');
-                                
-                                if ($userId || $queueNumber) {
-                                    // ✅ PERBAIKAN: Check apakah ada keluhan dari antrian yang aktif
-                                    if ($userId) {
-                                        $queue = \App\Models\Queue::where('user_id', $userId)
-                                            ->whereNotNull('chief_complaint')
-                                            ->where('chief_complaint', '!=', '')
-                                            ->whereIn('status', ['waiting', 'serving'])
-                                            ->whereDate('created_at', today())
-                                            ->latest('created_at')
-                                            ->first();
-                                    } else {
-                                        $queue = \App\Models\Queue::where('number', $queueNumber)
-                                            ->whereDate('created_at', today())
-                                            ->first();
-                                    }
-                                    
-                                    if ($queue && $queue->chief_complaint) {
-                                        return "✅ Keluhan diambil dari antrian #{$queue->number}: \"" . \Illuminate\Support\Str::limit($queue->chief_complaint, 80) . "\"";
-                                    } else {
-                                        return "ℹ️ Pasien tidak mengisi keluhan saat ambil antrian. Silakan tanyakan langsung kepada pasien.";
-                                    }
-                                }
-                                
-                                return "Jelaskan gejala atau keluhan utama pasien secara detail.";
-                            }),
+                            ->helperText('Keluhan akan terisi otomatis dari rekam medis sebelumnya'),
 
                         Forms\Components\Grid::make(2)
                             ->schema([

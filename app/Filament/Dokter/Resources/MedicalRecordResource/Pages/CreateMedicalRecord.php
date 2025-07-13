@@ -1,11 +1,12 @@
 <?php
-// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php - PERBAIKAN AUTO-FILL KELUHAN
+// File: app/Filament/Dokter/Resources/MedicalRecordResource/Pages/CreateMedicalRecord.php - MODIFIED: AUTO-FILL dari Medical Record
 
 namespace App\Filament\Dokter\Resources\MedicalRecordResource\Pages;
 
 use App\Filament\Dokter\Resources\MedicalRecordResource;
 use App\Models\User;
 use App\Models\Queue;
+use App\Models\MedicalRecord; // ✅ TAMBAH: Import MedicalRecord model
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -64,12 +65,10 @@ class CreateMedicalRecord extends CreateRecord
             
             // ✅ VALIDASI: Pastikan user ada dan role-nya 'user'
             if ($user && $user->role === 'user') {
-                // ✅ PERBAIKAN: Cari keluhan dari antrian terbaru yang masih aktif
-                $queueWithComplaint = Queue::where('user_id', $userId)
+                // ✅ MODIFIED: Cari keluhan dari medical record terbaru pasien ini
+                $latestMedicalRecord = MedicalRecord::where('user_id', $userId)
                     ->whereNotNull('chief_complaint')
                     ->where('chief_complaint', '!=', '')
-                    ->whereIn('status', ['waiting', 'serving']) // ✅ Hanya antrian aktif
-                    ->whereDate('created_at', today()) // ✅ Hanya hari ini
                     ->latest('created_at')
                     ->first();
                 
@@ -79,14 +78,14 @@ class CreateMedicalRecord extends CreateRecord
                     'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
                 ];
                 
-                // ✅ PERBAIKAN: AUTO-FILL KELUHAN JIKA ADA dari antrian aktif
-                if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
-                    $formData['chief_complaint'] = $queueWithComplaint->chief_complaint;
+                // ✅ MODIFIED: AUTO-FILL KELUHAN dari medical record terbaru
+                if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                    $formData['chief_complaint'] = $latestMedicalRecord->chief_complaint;
                 }
                 
                 $this->form->fill($formData);
                 
-                // ✅ ENHANCED NOTIFICATION dengan info keluhan yang lebih detail
+                // ✅ MODIFIED NOTIFICATION: Update info untuk medical record
                 $notificationBody = "Auto-selected: {$user->name}";
                 
                 if ($user->medical_record_number) {
@@ -99,27 +98,16 @@ class CreateMedicalRecord extends CreateRecord
                     $notificationBody .= " (Antrian: {$queueNumber})";
                 }
                 
-                // ✅ PERBAIKAN: Tambah info keluhan dengan lebih detail
-                if ($queueWithComplaint && $queueWithComplaint->chief_complaint) {
+                // ✅ MODIFIED: Info keluhan dari medical record
+                if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
                     $complainLimit = 100;
-                    $shortComplaint = strlen($queueWithComplaint->chief_complaint) > $complainLimit 
-                        ? substr($queueWithComplaint->chief_complaint, 0, $complainLimit) . '...'
-                        : $queueWithComplaint->chief_complaint;
-                    $notificationBody .= "\n📝 Keluhan dari antrian #{$queueWithComplaint->number}: \"{$shortComplaint}\"";
-                    $notificationBody .= "\n⏰ Diambil: {$queueWithComplaint->created_at->format('d/m/Y H:i')}";
+                    $shortComplaint = strlen($latestMedicalRecord->chief_complaint) > $complainLimit 
+                        ? substr($latestMedicalRecord->chief_complaint, 0, $complainLimit) . '...'
+                        : $latestMedicalRecord->chief_complaint;
+                    $notificationBody .= "\n📝 Keluhan dari rekam medis terakhir: \"{$shortComplaint}\"";
+                    $notificationBody .= "\n⏰ Tanggal: {$latestMedicalRecord->created_at->format('d/m/Y H:i')}";
                 } else {
-                    // ✅ Cek apakah ada antrian tapi tanpa keluhan
-                    $anyQueue = Queue::where('user_id', $userId)
-                        ->whereIn('status', ['waiting', 'serving'])
-                        ->whereDate('created_at', today())
-                        ->latest('created_at')
-                        ->first();
-                    
-                    if ($anyQueue) {
-                        $notificationBody .= "\n💬 Pasien punya antrian #{$anyQueue->number} tapi tidak mengisi keluhan";
-                    } else {
-                        $notificationBody .= "\n💬 Tidak ada antrian aktif hari ini";
-                    }
+                    $notificationBody .= "\n💬 Tidak ada keluhan dari rekam medis sebelumnya";
                 }
                 
                 Notification::make()
@@ -152,7 +140,7 @@ class CreateMedicalRecord extends CreateRecord
                     ->send();
             }
         } elseif ($queueNumber) {
-            // ✅ PERBAIKAN: HANDLE BERDASARKAN QUEUE NUMBER SAJA
+            // ✅ MODIFIED: HANDLE BERDASARKAN QUEUE NUMBER SAJA - ambil keluhan dari medical record
             $queue = Queue::where('number', $queueNumber)
                 ->whereDate('created_at', today())
                 ->with('user')
@@ -161,14 +149,21 @@ class CreateMedicalRecord extends CreateRecord
             if ($queue && $queue->user) {
                 $user = $queue->user;
                 
+                // ✅ MODIFIED: Cari keluhan dari medical record terbaru pasien ini
+                $latestMedicalRecord = MedicalRecord::where('user_id', $user->id)
+                    ->whereNotNull('chief_complaint')
+                    ->where('chief_complaint', '!=', '')
+                    ->latest('created_at')
+                    ->first();
+                
                 $formData = [
                     'user_id' => $user->id,
                     'display_medical_record_number' => $user->medical_record_number ?? 'Belum ada nomor rekam medis',
                 ];
                 
-                // ✅ AUTO-FILL KELUHAN dari queue ini
-                if ($queue->chief_complaint) {
-                    $formData['chief_complaint'] = $queue->chief_complaint;
+                // ✅ MODIFIED: AUTO-FILL KELUHAN dari medical record
+                if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                    $formData['chief_complaint'] = $latestMedicalRecord->chief_complaint;
                 }
                 
                 $this->form->fill($formData);
@@ -178,14 +173,15 @@ class CreateMedicalRecord extends CreateRecord
                     $notificationBody .= " | No. RM: {$user->medical_record_number}";
                 }
                 
-                if ($queue->chief_complaint) {
-                    $shortComplaint = strlen($queue->chief_complaint) > 100 
-                        ? substr($queue->chief_complaint, 0, 100) . '...'
-                        : $queue->chief_complaint;
-                    $notificationBody .= "\n📝 Keluhan: \"{$shortComplaint}\"";
-                    $notificationBody .= "\n⏰ Status: {$queue->status_label}";
+                // ✅ MODIFIED: Info dari medical record
+                if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                    $shortComplaint = strlen($latestMedicalRecord->chief_complaint) > 100 
+                        ? substr($latestMedicalRecord->chief_complaint, 0, 100) . '...'
+                        : $latestMedicalRecord->chief_complaint;
+                    $notificationBody .= "\n📝 Keluhan dari rekam medis terakhir: \"{$shortComplaint}\"";
+                    $notificationBody .= "\n⏰ Tanggal: {$latestMedicalRecord->created_at->format('d/m/Y H:i')}";
                 } else {
-                    $notificationBody .= "\n💬 Tidak ada keluhan dari antrian";
+                    $notificationBody .= "\n💬 Tidak ada keluhan dari rekam medis sebelumnya";
                 }
                 
                 Notification::make()
@@ -193,6 +189,34 @@ class CreateMedicalRecord extends CreateRecord
                     ->body($notificationBody)
                     ->success()
                     ->duration(10000)
+                    ->send();
+            }
+        }
+    }
+
+    // ✅ TAMBAHAN: Method untuk auto-fill saat pilih pasien di form (seperti di Edit)
+    public function afterStateUpdated($component, $state): void
+    {
+        // Auto-fill keluhan ketika user_id dipilih
+        if ($component === 'user_id' && $state) {
+            $latestMedicalRecord = MedicalRecord::where('user_id', $state)
+                ->whereNotNull('chief_complaint')
+                ->where('chief_complaint', '!=', '')
+                ->latest('created_at')
+                ->first();
+
+            if ($latestMedicalRecord && $latestMedicalRecord->chief_complaint) {
+                // Set keluhan dari medical record terbaru
+                $this->form->fill([
+                    'chief_complaint' => $latestMedicalRecord->chief_complaint
+                ]);
+
+                // Tampilkan notifikasi
+                Notification::make()
+                    ->title('Auto-fill Keluhan')
+                    ->body("Keluhan diisi otomatis dari rekam medis terakhir ({$latestMedicalRecord->created_at->format('d/m/Y')})")
+                    ->success()
+                    ->duration(5000)
                     ->send();
             }
         }
