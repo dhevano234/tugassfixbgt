@@ -133,16 +133,6 @@
         @endif
     </div>
 
-    {{-- Connection Status - Simple Info --}}
-    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-        <div class="flex items-center">
-            <div class="w-2 h-2 bg-green-400 rounded-full mr-3"></div>
-            <div class="text-sm">
-                <span class="font-medium text-green-800">Panel Dokter</span>
-                <span class="text-green-600 ml-2">• Terhubung dengan Panel Admin</span>
-            </div>
-        </div>
-    </div>
 
     {{-- Main Navigation Cards - Simple Grid --}}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

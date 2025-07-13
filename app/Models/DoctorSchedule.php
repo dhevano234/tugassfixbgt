@@ -11,7 +11,8 @@ use App\Models\DailyQuota;
 class DoctorSchedule extends Model
 {
     protected $fillable = [
-        'doctor_name',
+        'doctor_id',        // ✅ ADDED: Foreign key ke users table
+        'doctor_name',      // ✅ KEEP: Untuk backward compatibility
         'service_id',
         'day_of_week',
         'days', 
@@ -29,6 +30,14 @@ class DoctorSchedule extends Model
     ];
 
     /**
+     * ✅ NEW: Relationship ke User (dokter)
+     */
+    public function doctor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'doctor_id');
+    }
+
+    /**
      * Relationship ke Service (Poli)
      */
     public function service(): BelongsTo
@@ -37,11 +46,11 @@ class DoctorSchedule extends Model
     }
 
     /**
-     * Relationship ke User (untuk nanti ketika terhubung)
+     * ✅ UPDATED: Relationship ke User (untuk backward compatibility)
      */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'doctor_id');
     }
 
     /**
@@ -78,6 +87,20 @@ class DoctorSchedule extends Model
     public function getHasFotoAttribute(): bool
     {
         return !empty($this->foto) && Storage::disk('public')->exists($this->foto);
+    }
+
+    /**
+     * ✅ NEW: Get doctor name (with fallback)
+     */
+    public function getDoctorNameAttribute($value): string
+    {
+        // Jika ada doctor_id, ambil nama dari relationship
+        if ($this->doctor_id && $this->doctor) {
+            return $this->doctor->name;
+        }
+        
+        // Fallback ke doctor_name field (untuk backward compatibility)
+        return $value ?? 'Nama Dokter Tidak Diketahui';
     }
 
     /**
@@ -170,13 +193,13 @@ class DoctorSchedule extends Model
     }
 
     /**
-     * ✅ CHECK: Apakah ada konflik dengan schedule existing
+     * ✅ NEW: Check if schedule has conflict with existing schedules (UPDATED untuk doctor_id)
      */
-    public static function hasConflict(string $doctorName, int $serviceId, array $days, string $startTime, string $endTime, ?int $excludeId = null): bool
+    public static function hasConflict($doctorId, $serviceId, $days, $startTime, $endTime, $excludeId = null): bool
     {
-        $query = self::where('doctor_name', $doctorName)
-            ->where('service_id', $serviceId)
-            ->where('is_active', true);
+        $query = self::where('doctor_id', $doctorId)
+                     ->where('service_id', $serviceId)
+                     ->where('is_active', true);
 
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
@@ -185,23 +208,31 @@ class DoctorSchedule extends Model
         $existingSchedules = $query->get();
 
         foreach ($existingSchedules as $schedule) {
-            $commonDays = array_intersect($days, $schedule->days ?? []);
+            // Check if any day overlaps
+            $existingDays = $schedule->days ?? [];
+            $newDays = is_array($days) ? $days : [$days];
             
-            if (!empty($commonDays)) {
-                $existingStart = $schedule->start_time->format('H:i');
-                $existingEnd = $schedule->end_time->format('H:i');
-                
-                if (self::timeOverlaps($startTime, $endTime, $existingStart, $existingEnd)) {
-                    return true;
+            $dayOverlap = array_intersect($existingDays, $newDays);
+            
+            if (!empty($dayOverlap)) {
+                // Check time overlap
+                $existingStart = Carbon::parse($schedule->start_time)->format('H:i');
+                $existingEnd = Carbon::parse($schedule->end_time)->format('H:i');
+                $newStart = Carbon::parse($startTime)->format('H:i');
+                $newEnd = Carbon::parse($endTime)->format('H:i');
+
+                // Time overlap logic
+                if (($newStart < $existingEnd) && ($newEnd > $existingStart)) {
+                    return true; // Conflict found
                 }
             }
         }
 
-        return false;
+        return false; // No conflict
     }
 
     /**
-     * ✅ HELPER: Check if time ranges overlap
+     * ✅ HELPER: Check if time ranges overlap (TETAP ADA)
      */
     private static function timeOverlaps(string $start1, string $end1, string $start2, string $end2): bool
     {
@@ -233,7 +264,15 @@ class DoctorSchedule extends Model
     }
 
     /**
-     * ✅ SCOPE: Filter by doctor name
+     * ✅ SCOPE: Filter by doctor ID (NEW)
+     */
+    public function scopeByDoctor($query, $doctorId)
+    {
+        return $query->where('doctor_id', $doctorId);
+    }
+
+    /**
+     * ✅ SCOPE: Filter by doctor name (KEEP untuk backward compatibility)
      */
     public function scopeForDoctor($query, string $doctorName)
     {

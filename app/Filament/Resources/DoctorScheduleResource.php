@@ -1,7 +1,6 @@
 <?php
-// ================================================================================================
-// 1. UPDATE: app/Filament/Resources/DoctorScheduleResource.php - LENGKAP
-// ================================================================================================
+// File: app/Filament/Resources/DoctorScheduleResource.php
+// FINAL: Dropdown dokter dari database users + semua fitur existing
 
 namespace App\Filament\Resources;
 
@@ -15,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Hash;
 
 class DoctorScheduleResource extends Resource
 {
@@ -34,7 +34,7 @@ class DoctorScheduleResource extends Resource
     {
         return $form
             ->schema([
-                // ✅ SECTION 1: FOTO DOKTER (BARU)
+                // ✅ SECTION 1: FOTO DOKTER
                 Forms\Components\Section::make('Foto Dokter')
                     ->description('Upload foto profil dokter untuk ditampilkan di jadwal')
                     ->schema([
@@ -61,18 +61,100 @@ class DoctorScheduleResource extends Resource
                     ->columns(1)
                     ->collapsible(),
 
-                // ✅ SECTION 2: INFORMASI DOKTER
+                // ✅ SECTION 2: INFORMASI DOKTER (UPDATED)
                 Forms\Components\Section::make('Informasi Dokter')
                     ->description('Data dokter dan poli praktik')
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
-                                Forms\Components\TextInput::make('doctor_name')
-                                    ->label('Nama Dokter')
+                                // ✅ DROPDOWN: Pilih dokter dari database users (role: dokter)
+                                Forms\Components\Select::make('doctor_id')
+                                    ->label('Pilih Dokter')
                                     ->required()
-                                    ->maxLength(255)
-                                    ->placeholder('dr. Nama Dokter')
-                                    ->helperText('Masukkan nama lengkap dokter dengan gelar'),
+                                    ->options(function () {
+                                        return User::where('role', 'dokter')
+                                            ->orderBy('name')
+                                            ->pluck('name', 'id');
+                                    })
+                                    ->searchable()
+                                    ->placeholder('-- Pilih Dokter --')
+                                    ->helperText('Pilih dokter dari daftar users dengan role dokter, atau buat dokter baru')
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, callable $set) {
+                                        // Auto-fill doctor_name berdasarkan pilihan
+                                        if ($state) {
+                                            $doctor = User::find($state);
+                                            if ($doctor) {
+                                                $set('doctor_name', $doctor->name);
+                                            }
+                                        } else {
+                                            $set('doctor_name', null);
+                                        }
+                                    })
+                                    ->createOptionForm([
+                                        Forms\Components\TextInput::make('name')
+                                            ->label('Nama Lengkap Dokter')
+                                            ->required()
+                                            ->placeholder('dr. Nama Dokter, Sp.XX')
+                                            ->helperText('Contoh: dr. Ahmad Wijaya, Sp.PD'),
+                                        Forms\Components\TextInput::make('email')
+                                            ->label('Email')
+                                            ->email()
+                                            ->required()
+                                            ->unique('users', 'email')
+                                            ->placeholder('dokter@klinik.com'),
+                                        Forms\Components\TextInput::make('password')
+                                            ->label('Password')
+                                            ->password()
+                                            ->required()
+                                            ->minLength(8)
+                                            ->default('password123')
+                                            ->helperText('Minimal 8 karakter'),
+                                        Forms\Components\TextInput::make('phone')
+                                            ->label('No. Telepon')
+                                            ->tel()
+                                            ->placeholder('081234567890'),
+                                        Forms\Components\Select::make('gender')
+                                            ->label('Jenis Kelamin')
+                                            ->options([
+                                                'Laki-laki' => 'Laki-laki',
+                                                'Perempuan' => 'Perempuan',
+                                            ])
+                                            ->placeholder('Pilih jenis kelamin'),
+                                        Forms\Components\DatePicker::make('birth_date')
+                                            ->label('Tanggal Lahir')
+                                            ->native(false)
+                                            ->displayFormat('d/m/Y'),
+                                        Forms\Components\Textarea::make('address')
+                                            ->label('Alamat')
+                                            ->rows(3)
+                                            ->placeholder('Alamat lengkap dokter')
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->createOptionUsing(function (array $data) {
+                                        $doctor = User::create([
+                                            'name' => $data['name'],
+                                            'email' => $data['email'],
+                                            'password' => Hash::make($data['password']),
+                                            'role' => 'dokter',
+                                            'phone' => $data['phone'] ?? null,
+                                            'gender' => $data['gender'] ?? null,
+                                            'birth_date' => $data['birth_date'] ?? null,
+                                            'address' => $data['address'] ?? null,
+                                            'email_verified_at' => now(),
+                                        ]);
+                                        
+                                        Notification::make()
+                                            ->title('✅ Dokter Baru Berhasil Dibuat')
+                                            ->body("Akun dokter {$data['name']} telah dibuat dengan email {$data['email']}")
+                                            ->success()
+                                            ->send();
+                                            
+                                        return $doctor->id;
+                                    }),
+
+                                // ✅ HIDDEN: Field doctor_name untuk backward compatibility
+                                Forms\Components\Hidden::make('doctor_name'),
                                     
                                 Forms\Components\Select::make('service_id')
                                     ->label('Poli')
@@ -133,7 +215,8 @@ class DoctorScheduleResource extends Resource
                                     ->required()
                                     ->seconds(false)
                                     ->format('H:i')
-                                    ->default('08:00'),
+                                    ->default('08:00')
+                                    ->helperText('Format 24 jam (contoh: 08:00)'),
                                     
                                 Forms\Components\TimePicker::make('end_time')
                                     ->label('Jam Selesai')
@@ -141,7 +224,8 @@ class DoctorScheduleResource extends Resource
                                     ->seconds(false)
                                     ->format('H:i')
                                     ->default('16:00')
-                                    ->after('start_time'),
+                                    ->after('start_time')
+                                    ->helperText('Format 24 jam (contoh: 16:00)'),
                             ]),
                             
                         Forms\Components\Toggle::make('is_active')
@@ -150,7 +234,7 @@ class DoctorScheduleResource extends Resource
                             ->helperText('Jadwal hanya berlaku jika status aktif'),
                     ]),
 
-                // Hidden fields
+                // Hidden fields untuk backward compatibility
                 Forms\Components\Hidden::make('day_of_week'),
                 Forms\Components\Hidden::make('user_id'),
             ]);
@@ -160,14 +244,16 @@ class DoctorScheduleResource extends Resource
     {
         return $table
             ->columns([
-                // ✅ TAMBAH KOLOM FOTO
+                // ✅ KOLOM FOTO
                 Tables\Columns\ImageColumn::make('foto')
                     ->label('Foto')
                     ->circular()
                     ->size(50)
                     ->defaultImageUrl(asset('assets/img/default-doctor.png'))
-                    ->extraAttributes(['style' => 'object-fit: cover;']),
-                    
+                    ->extraAttributes(['style' => 'object-fit: cover;'])
+                    ->toggleable(),
+
+                // ✅ KOLOM NAMA DOKTER (dari relationship atau fallback)
                 Tables\Columns\TextColumn::make('doctor_name')
                     ->label('Nama Dokter')
                     ->searchable()
@@ -176,7 +262,14 @@ class DoctorScheduleResource extends Resource
                     ->limit(30)
                     ->description(fn (DoctorSchedule $record): string => 
                         $record->service ? "Poli: {$record->service->name}" : ''
-                    ),
+                    )
+                    ->formatStateUsing(function ($state, $record) {
+                        // Prioritas: nama dari relationship user, fallback ke doctor_name
+                        if ($record->doctor_id && $record->doctor) {
+                            return $record->doctor->name;
+                        }
+                        return $state ?? 'Nama tidak diketahui';
+                    }),
                     
                 Tables\Columns\TextColumn::make('service.name')
                     ->label('Poli')
@@ -218,6 +311,16 @@ class DoctorScheduleResource extends Resource
                     ->relationship('service', 'name')
                     ->searchable()
                     ->preload(),
+
+                Tables\Filters\SelectFilter::make('doctor_id')
+                    ->label('Dokter')
+                    ->options(function () {
+                        return User::where('role', 'dokter')
+                            ->orderBy('name')
+                            ->pluck('name', 'id');
+                    })
+                    ->searchable()
+                    ->preload(),
                     
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Status')
@@ -225,7 +328,6 @@ class DoctorScheduleResource extends Resource
                     ->trueLabel('Hanya Aktif')
                     ->falseLabel('Hanya Tidak Aktif'),
 
-                // ✅ FILTER FOTO
                 Tables\Filters\TernaryFilter::make('has_photo')
                     ->label('Foto')
                     ->placeholder('Semua Dokter')
@@ -239,11 +341,16 @@ class DoctorScheduleResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->requiresConfirmation()
+                    ->modalHeading('Hapus Jadwal Dokter')
+                    ->modalDescription('Apakah Anda yakin ingin menghapus jadwal dokter ini? Tindakan ini tidak dapat dibatalkan.')
+                    ->modalSubmitActionLabel('Hapus'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->requiresConfirmation(),
                 ]),
             ])
             ->striped()
@@ -266,60 +373,5 @@ class DoctorScheduleResource extends Resource
     public static function getNavigationBadgeColor(): string|array|null
     {
         return 'success';
-    }
-}
-
-// ================================================================================================
-// 2. UPDATE: app/Http/Controllers/DoctorController.php - SINKRON DENGAN USER
-// ================================================================================================
-
-namespace App\Http\Controllers;
-
-use App\Models\Doctor;
-use App\Models\DoctorSchedule;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-
-class DoctorController extends Controller
-{
-    public function jadwaldokter()
-    {
-        // ✅ AMBIL JADWAL DOKTER DENGAN FOTO
-        $doctors = DoctorSchedule::with('service')
-            ->where('is_active', true)
-            ->get()
-            ->groupBy('doctor_name') // Group berdasarkan nama dokter
-            ->map(function ($schedules) {
-                $firstSchedule = $schedules->first();
-                return [
-                    'id' => $firstSchedule->id,
-                    'doctor_name' => $firstSchedule->doctor_name,
-                    'foto' => $firstSchedule->foto, // ✅ INCLUDE FOTO
-                    'service' => $firstSchedule->service,
-                    'schedules' => $schedules,
-                    'all_days' => $schedules->flatMap(function ($schedule) {
-                        return $schedule->days ?? [];
-                    })->unique()->sort()->values(),
-                    'time_range' => $firstSchedule->time_range,
-                ];
-            })
-            ->sortBy('doctor_name');
-
-        return view('jadwaldokter', compact('doctors'));
-    }
-
-    public function index()
-    {
-        $doctors = DoctorSchedule::with('service')
-            ->where('is_active', true)
-            ->get();
-            
-        return view('doctors.index', compact('doctors'));
-    }
-
-    public function show($id)
-    {
-        $schedule = DoctorSchedule::with('service')->findOrFail($id);
-        return view('doctors.show', compact('schedule'));
     }
 }

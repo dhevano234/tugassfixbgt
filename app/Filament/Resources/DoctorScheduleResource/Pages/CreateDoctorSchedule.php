@@ -1,13 +1,16 @@
 <?php
 // File: app/Filament/Resources/DoctorScheduleResource/Pages/CreateDoctorSchedule.php
-// UPDATED: Single record untuk multiple days
+// UPDATED: Dropdown dokter dari database users
 
 namespace App\Filament\Resources\DoctorScheduleResource\Pages;
 
 use App\Filament\Resources\DoctorScheduleResource;
 use App\Models\DoctorSchedule;
+use App\Models\User;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class CreateDoctorSchedule extends CreateRecord
 {
@@ -29,11 +32,45 @@ class CreateDoctorSchedule extends CreateRecord
         return $this->getResource()::getUrl('index');
     }
 
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        // ✅ VALIDASI: Pastikan doctor_id adalah role 'dokter'
+        if (isset($data['doctor_id'])) {
+            $doctor = User::find($data['doctor_id']);
+            if (!$doctor || $doctor->role !== 'dokter') {
+                throw new \Exception('User yang dipilih bukan dokter');
+            }
+            
+            // Set doctor_name dari database
+            $data['doctor_name'] = $doctor->name;
+        }
+
+        // Validasi data sebelum proses
+        if (empty($data['days'])) {
+            throw new \Exception('Harap pilih minimal satu hari praktik');
+        }
+
+        if (empty($data['doctor_id'])) {
+            throw new \Exception('Dokter harus dipilih');
+        }
+
+        if (empty($data['service_id'])) {
+            throw new \Exception('Poli harus dipilih');
+        }
+
+        if (empty($data['start_time']) || empty($data['end_time'])) {
+            throw new \Exception('Jam praktik harus diisi');
+        }
+
+        return $data;
+    }
+
     protected function handleRecordCreation(array $data): \Illuminate\Database\Eloquent\Model
     {
-        // ✅ NEW LOGIC: Simpan sebagai satu record dengan multiple days
+        // ✅ LOGIC: Validasi dan pembuatan jadwal dengan doctor_id
         
         $days = $data['days'] ?? [];
+        $doctorId = $data['doctor_id'];
         $doctorName = $data['doctor_name'];
         $serviceId = $data['service_id'];
         $startTime = $data['start_time'];
@@ -46,7 +83,7 @@ class CreateDoctorSchedule extends CreateRecord
                 ->body('Harap pilih minimal satu hari praktik')
                 ->danger()
                 ->send();
-            return new DoctorSchedule();
+            throw new \Exception('Harap pilih minimal satu hari praktik');
         }
 
         if ($startTime >= $endTime) {
@@ -55,23 +92,24 @@ class CreateDoctorSchedule extends CreateRecord
                 ->body('Jam mulai harus lebih awal dari jam selesai')
                 ->danger()
                 ->send();
-            return new DoctorSchedule();
+            throw new \Exception('Jam mulai harus lebih awal dari jam selesai');
         }
 
-        // ✅ CEK KONFLIK: Apakah ada konflik dengan schedule existing
-        if (DoctorSchedule::hasConflict($doctorName, $serviceId, $days, $startTime, $endTime)) {
+        // ✅ CEK KONFLIK: Menggunakan doctor_id (bukan doctor_name)
+        if (DoctorSchedule::hasConflict($doctorId, $serviceId, $days, $startTime, $endTime)) {
             Notification::make()
                 ->title('⚠️ Konflik Jadwal')
                 ->body('Jadwal bertabrakan dengan jadwal yang sudah ada untuk dokter ini')
                 ->warning()
                 ->send();
-            return new DoctorSchedule();
+            throw new \Exception('Jadwal bertabrakan dengan jadwal yang sudah ada');
         }
 
         try {
-            // ✅ CREATE: Buat satu record dengan multiple days
+            // ✅ CREATE: Buat jadwal dengan doctor_id dan doctor_name
             $schedule = DoctorSchedule::create([
-                'doctor_name' => $doctorName,
+                'doctor_id' => $doctorId,      // ✅ NEW: Foreign key ke users
+                'doctor_name' => $doctorName,  // ✅ KEEP: Untuk backward compatibility
                 'service_id' => $serviceId,
                 'days' => $days, // Array of days
                 'start_time' => $startTime,
@@ -110,37 +148,25 @@ class CreateDoctorSchedule extends CreateRecord
                 ->danger()
                 ->send();
             
-            return new DoctorSchedule();
+            throw $e;
         }
     }
 
     protected function getCreatedNotificationTitle(): ?string
     {
-        return null; // Disable default notification
+        return null; // Disable default notification karena sudah custom
     }
 
-    /**
-     * ✅ VALIDATION: Form validation sebelum submit
-     */
-    protected function mutateFormDataBeforeCreate(array $data): array
+    protected function afterCreate(): void
     {
-        // Validasi data sebelum proses
-        if (empty($data['days'])) {
-            throw new \Exception('Harap pilih minimal satu hari praktik');
-        }
-
-        if (empty($data['doctor_name'])) {
-            throw new \Exception('Nama dokter harus diisi');
-        }
-
-        if (empty($data['service_id'])) {
-            throw new \Exception('Poli harus dipilih');
-        }
-
-        if (empty($data['start_time']) || empty($data['end_time'])) {
-            throw new \Exception('Jam praktik harus diisi');
-        }
-
-        return $data;
+        // ✅ LOG: Optional logging untuk audit trail
+        Log::info('Doctor schedule created', [
+            'doctor_id' => $this->record->doctor_id,
+            'doctor_name' => $this->record->doctor_name,
+            'service_id' => $this->record->service_id,
+            'days' => $this->record->days,
+            'created_by' => Auth::id(),
+            'created_at' => now(),
+        ]);
     }
 }

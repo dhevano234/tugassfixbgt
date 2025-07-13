@@ -40,17 +40,6 @@
         </div>
     </div>
 
-    {{-- Connection Status - Simple Info --}}
-    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
-        <div class="flex items-center">
-            <div class="w-2 h-2 bg-amber-400 rounded-full mr-3"></div>
-            <div class="text-sm">
-                <span class="font-medium text-amber-800">Panel Admin</span>
-                <span class="text-amber-600 ml-2">• Terhubung dengan Panel Dokter</span>
-            </div>
-        </div>
-    </div>
-
     {{-- Main Navigation Cards - Grid dengan Patient Management --}}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
         {{-- Data Pasien - BARU --}}
