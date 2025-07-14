@@ -1,5 +1,4 @@
 <?php
-// File: app/Http/Controllers/DashboardController.php - FIXED ESTIMATION + QuotaInfo
 
 namespace App\Http\Controllers;
 
@@ -9,7 +8,7 @@ use App\Models\Queue;
 use App\Models\User;
 use App\Models\Service;
 use App\Models\DoctorSchedule;
-use App\Models\DailyQuota; // ✅ TAMBAH: Import DailyQuota
+use App\Models\WeeklyQuota; // ✅ CHANGED: Import WeeklyQuota instead of DailyQuota
 use Carbon\Carbon;
 
 class DashboardController extends Controller
@@ -19,23 +18,22 @@ class DashboardController extends Controller
         $userId = Auth::id();
         $today = Carbon::today();
         
-        // ✅ PERBAIKAN: Antrian aktif user berdasarkan tanggal_antrian hari ini
+        // ✅ EXISTING: Antrian aktif user berdasarkan tanggal_antrian hari ini
         $antrianAktif = Queue::where('user_id', $userId)
             ->whereIn('status', ['waiting', 'serving'])
-            ->whereDate('tanggal_antrian', $today) // ✅ FIXED: Gunakan tanggal_antrian
+            ->whereDate('tanggal_antrian', $today)
             ->with(['service', 'counter'])
             ->first();
 
-        // ✅ STATISTIK REAL untuk cards
+        // ✅ EXISTING: Statistik real untuk cards
         $stats = [
-            'antrian_hari_ini' => Queue::whereDate('tanggal_antrian', $today)->count(), // ✅ FIXED
-            // ✅ HAPUS: total_pasien dan dokter_aktif (diganti dengan quota)
+            'antrian_hari_ini' => Queue::whereDate('tanggal_antrian', $today)->count(),
         ];
 
-        // ✅ NEW: Tambah quota info untuk menggantikan total pasien & dokter aktif
+        // ✅ UPDATED: Quota info menggunakan WeeklyQuota
         $quotaInfo = $this->getTodayQuotaInfo();
 
-        // ✅ STATUS ANTRIAN REAL untuk chart - berdasarkan tanggal_antrian
+        // ✅ EXISTING: Status antrian real untuk chart
         $statusAntrian = [
             'menunggu' => Queue::where('status', 'waiting')->whereDate('tanggal_antrian', $today)->count(),
             'dipanggil' => Queue::where('status', 'serving')->whereDate('tanggal_antrian', $today)->count(),
@@ -43,33 +41,34 @@ class DashboardController extends Controller
             'dibatalkan' => Queue::where('status', 'canceled')->whereDate('tanggal_antrian', $today)->count(),
         ];
 
-        // ✅ ESTIMASI WAKTU TUNGGU untuk antrian aktif user - FIXED
+        // ✅ EXISTING: Estimasi waktu tunggu untuk antrian aktif user
         $estimasiInfo = null;
         if ($antrianAktif && $antrianAktif->status === 'waiting') {
             $estimasiInfo = $this->calculateWaitingTime($antrianAktif);
         }
 
         return view('frontend.dashboard', compact(
-            'antrianAktif', 
+            'antrianAktif',  // ✅ MINOR FIX: Tambahkan variable yang hilang
             'stats', 
-            'quotaInfo', // ✅ TAMBAH: quotaInfo ke compact
+            'quotaInfo',
             'statusAntrian', 
             'estimasiInfo'
         ));
     }
 
     /**
-     * ✅ NEW: Get quota information untuk hari ini
+     * ✅ UPDATED: Get quota information untuk hari ini menggunakan WeeklyQuota
      */
     private function getTodayQuotaInfo()
     {
         $today = today();
+        $todayDayOfWeek = strtolower($today->format('l')); // monday, tuesday, etc.
         
-        // Get all active quotas untuk hari ini
-        $quotas = DailyQuota::with(['doctorSchedule.service'])
-            ->where('quota_date', $today)
+        // Get all active quotas untuk hari ini berdasarkan day_of_week
+        $quotas = WeeklyQuota::with(['doctorSchedule.service'])
+            ->where('day_of_week', $todayDayOfWeek) // ✅ CHANGED: Use day_of_week instead of quota_date
             ->where('is_active', true)
-            ->orderBy('used_quota', 'desc') // Urutkan berdasarkan yang paling banyak terpakai
+            ->orderBy('total_quota', 'desc') // Urutkan berdasarkan quota terbesar
             ->get();
 
         if ($quotas->isEmpty()) {
@@ -88,12 +87,12 @@ class DashboardController extends Controller
                     'doctor_name' => $quota->doctorSchedule->doctor_name ?? 'Unknown',
                     'service_name' => $quota->doctorSchedule->service->name ?? 'Unknown',
                     'total_quota' => $quota->total_quota,
-                    'used_quota' => $quota->used_quota,
-                    'available_quota' => $quota->available_quota,
-                    'usage_percentage' => $quota->usage_percentage,
-                    'status_color' => $quota->status_color,
-                    'status_label' => $quota->status_label,
-                    'formatted_quota' => $quota->formatted_quota,
+                    'used_quota' => $quota->used_quota_today,        // ✅ CHANGED: Use accessor
+                    'available_quota' => $quota->available_quota_today,
+                    'usage_percentage' => $quota->usage_percentage_today,
+                    'status_color' => $quota->getStatusColor(),
+                    'status_label' => $quota->status_label_today,
+                    'formatted_quota' => $quota->formatted_quota_today,
                     'time_range' => $quota->doctorSchedule->time_range ?? 'Unknown',
                 ];
             })
@@ -101,15 +100,15 @@ class DashboardController extends Controller
     }
 
     /**
-     * ✅ FIXED: HITUNG ESTIMASI WAKTU TUNGGU berdasarkan tanggal antrian
+     * ✅ EXISTING: Hitung estimasi waktu tunggu berdasarkan tanggal antrian
      */
     private function calculateWaitingTime($queue)
     {
-        // ✅ PERBAIKAN: Hitung berapa antrian di depan berdasarkan tanggal_antrian
+        // Hitung berapa antrian di depan berdasarkan tanggal_antrian
         $antrianDidepan = Queue::where('service_id', $queue->service_id)
             ->where('status', 'waiting')
             ->where('id', '<', $queue->id)
-            ->whereDate('tanggal_antrian', $queue->tanggal_antrian ?? today()) // ✅ FIXED
+            ->whereDate('tanggal_antrian', $queue->tanggal_antrian ?? today())
             ->count();
 
         // Setiap antrian butuh 15 menit + extra delay
@@ -117,7 +116,7 @@ class DashboardController extends Controller
         $extraDelay = $queue->extra_delay_minutes ?: 0;
         $totalEstimatedMinutes = $baseMinutes + $extraDelay;
 
-        // ✅ PERBAIKAN: Waktu estimasi berdasarkan estimated_call_time jika ada
+        // Waktu estimasi berdasarkan estimated_call_time jika ada
         if ($queue->estimated_call_time) {
             $waktuEstimasi = $queue->estimated_call_time;
         } else {
@@ -151,16 +150,16 @@ class DashboardController extends Controller
     }
 
     /**
-     * ✅ FIXED: API ENDPOINT untuk update estimasi dengan tanggal antrian
+     * ✅ EXISTING: API endpoint untuk update estimasi dengan tanggal antrian
      */
     public function realtimeEstimation(Request $request)
     {
         $userId = Auth::id();
         
-        // ✅ PERBAIKAN: Cek antrian aktif berdasarkan tanggal_antrian hari ini
+        // Cek antrian aktif berdasarkan tanggal_antrian hari ini
         $antrianAktif = Queue::where('user_id', $userId)
             ->whereIn('status', ['waiting', 'serving'])
-            ->whereDate('tanggal_antrian', today()) // ✅ FIXED
+            ->whereDate('tanggal_antrian', today())
             ->with(['service'])
             ->first();
 

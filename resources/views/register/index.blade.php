@@ -282,7 +282,7 @@
 
         .password-requirements li i {
             margin-right: 0.5rem;
-            width: 1em; /* Ensure consistent spacing */
+            width: 1em; 
             text-align: center;
         }
 

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
-use App\Models\DailyQuota;
+use App\Models\WeeklyQuota;
 
 class DoctorSchedule extends Model
 {
@@ -62,11 +62,11 @@ class DoctorSchedule extends Model
     }
 
     /**
-     * ✅ NEW: Relationship ke DailyQuota
+     * ✅ NEW: Relationship ke WeeklyQuota
      */
-    public function dailyQuotas(): HasMany
+    public function WeeklyQuotas(): HasMany
     {
-        return $this->hasMany(DailyQuota::class);
+        return $this->hasMany(WeeklyQuota::class);
     }
 
     /**
@@ -313,9 +313,9 @@ class DoctorSchedule extends Model
     /**
      * ✅ NEW: Get quota untuk tanggal tertentu
      */
-    public function getQuotaForDate($date): ?DailyQuota
+    public function getQuotaForDate($date): ?WeeklyQuota
     {
-        return $this->dailyQuotas()
+        return $this->WeeklyQuotas()
             ->where('quota_date', $date)
             ->where('is_active', true)
             ->first();
@@ -332,9 +332,9 @@ class DoctorSchedule extends Model
     /**
      * ✅ NEW: Get atau create quota untuk tanggal tertentu
      */
-    public function getOrCreateQuotaForDate($date, $defaultQuota = 20): DailyQuota
+    public function getOrCreateQuotaForDate($date, $defaultQuota = 20): WeeklyQuota
     {
-        return DailyQuota::getOrCreateQuota($this->id, $date, $defaultQuota);
+        return WeeklyQuota::getOrCreateQuota($this->id, $date, $defaultQuota);
     }
 
     /**
@@ -342,7 +342,7 @@ class DoctorSchedule extends Model
      */
     public function isQuotaAvailableForDate($date): bool
     {
-        return DailyQuota::isQuotaAvailable($this->id, $date);
+        return WeeklyQuota::isQuotaAvailable($this->id, $date);
     }
 
     /**
@@ -350,7 +350,7 @@ class DoctorSchedule extends Model
      */
     public function getQuotaSummary($startDate, $endDate): array
     {
-        $quotas = $this->dailyQuotas()
+        $quotas = $this->WeeklyQuotas()
             ->whereBetween('quota_date', [$startDate, $endDate])
             ->where('is_active', true)
             ->get();
@@ -373,7 +373,7 @@ class DoctorSchedule extends Model
     {
         $date = $date ?? today();
         
-        return $query->whereHas('dailyQuotas', function ($q) use ($date) {
+        return $query->whereHas('WeeklyQuotas', function ($q) use ($date) {
             $q->where('quota_date', $date)
               ->where('is_active', true);
         });
@@ -386,7 +386,7 @@ class DoctorSchedule extends Model
     {
         $date = $date ?? today();
         
-        return $query->whereHas('dailyQuotas', function ($q) use ($date) {
+        return $query->whereHas('WeeklyQuotas', function ($q) use ($date) {
             $q->where('quota_date', $date)
               ->where('is_active', true)
               ->whereRaw('used_quota < total_quota');

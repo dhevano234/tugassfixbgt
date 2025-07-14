@@ -37,15 +37,15 @@ Route::middleware('guest:web')->group(function () {
     Route::post('reset-password', [ResetPasswordController::class, 'reset'])->name('password.update');
 });
 
-// Routes untuk USER/PASIEN SAJA
+
 Route::middleware(['auth:web', 'role.user'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/home', [HomeController::class, 'index'])->name('home');
-
-    // ✅ NEW: API untuk realtime estimation
-    Route::get('/dashboard/realtime-estimation', [DashboardController::class, 'getRealtimeEstimation'])->name('dashboard.realtime-estimation');
-
-    // ✅ NEW: Session-related API routes
+    Route::get('/panduan-user', function () {
+        return view('panduan.user-guide');
+    })->name('panduan.user');
+    
+    // ✅ session api
     Route::prefix('api/antrian')->name('api.antrian.')->group(function () {
         Route::get('/available-sessions', [AntrianController::class, 'getAvailableSessions'])
              ->name('available-sessions');
@@ -60,12 +60,12 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
              ->name('check-available-slots');
     });
 
-    // Profile Routes
+    
     Route::get('/editprofile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::put('/password', [ProfileController::class, 'updatePassword'])->name('password.update');
 
-    // Riwayat Pasien Routes
+    
     Route::prefix('riwayatkunjungan')->name('riwayat.')->controller(RiwayatController::class)->group(function () {
         Route::get('/', 'index')->name('index');
         Route::get('/export', 'export')->name('statistics');
@@ -85,7 +85,7 @@ Route::middleware(['auth:web', 'role.user'])->group(function () {
         Route::get('/{queue}/print', 'print')->name('print');
     });
 
-    // Doctor Info
+    
     Route::get('/doctors', [DoctorController::class, 'index'])->name('doctors.index');
     Route::get('/doctors/{schedule}', [DoctorController::class, 'show'])->name('doctors.show');
     Route::get('/jadwaldokter', [DoctorController::class, 'jadwaldokter'])->name('jadwaldokter');

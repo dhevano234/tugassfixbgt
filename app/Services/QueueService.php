@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - FINAL: Complete with Today Only Restriction
+// File: app/Services/QueueService.php - FIXED: WeeklyQuota Integration
 
 namespace App\Services;
 
@@ -8,7 +8,7 @@ use App\Models\Queue;
 use App\Models\Service;
 use App\Models\User;
 use App\Models\DoctorSchedule;
-use App\Models\DailyQuota;
+use App\Models\WeeklyQuota;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -55,9 +55,9 @@ class QueueService
                 'is_available' => $quotaCheck['available'],
                 'quota_status' => $quotaCheck['available'] ? 'Tersedia' : 'Penuh',
                 'quota_info' => $quotaCheck['quota'] ? [
-                    'used' => $quotaCheck['quota']->used_quota,
+                    'used' => $quotaCheck['quota']->used_quota_today,
                     'total' => $quotaCheck['quota']->total_quota,
-                    'remaining' => $quotaCheck['quota']->available_quota
+                    'remaining' => $quotaCheck['quota']->available_quota_today
                 ] : null,
                 'is_today' => $isToday,
                 'selected_date' => $tanggalAntrian
@@ -114,9 +114,9 @@ class QueueService
                 'extra_delay_minutes' => $this->getSessionDelay($doctorId, $tanggalAntrian),
             ]);
 
-            // ✅ NEW: Update quota usage
-            if ($quotaCheck['quota']) {
-                $quotaCheck['quota']->incrementUsedQuota();
+            // ✅ FIXED: Update quota usage untuk WeeklyQuota
+            if ($doctorId) {
+                $this->incrementWeeklyQuotaUsage($doctorId, $tanggalAntrian);
             }
 
             // Update estimasi untuk antrian lain
@@ -124,6 +124,209 @@ class QueueService
 
             return $queue;
         });
+    }
+
+    /**
+     * ✅ NEW: Increment weekly quota usage
+     */
+    private function incrementWeeklyQuotaUsage($doctorId, $tanggalAntrian)
+    {
+        $tanggalCarbon = Carbon::parse($tanggalAntrian);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quota = WeeklyQuota::where('doctor_schedule_id', $doctorId)
+            ->where('day_of_week', $dayOfWeek)
+            ->where('is_active', true)
+            ->first();
+        
+        if (!$quota) {
+            // Auto-create quota if not exists
+            $quota = WeeklyQuota::create([
+                'doctor_schedule_id' => $doctorId,
+                'day_of_week' => $dayOfWeek,
+                'total_quota' => 20,
+                'is_active' => true,
+            ]);
+        }
+        
+        // No need to manually increment - WeeklyQuota calculates from actual queues
+    }
+
+    /**
+     * ✅ FIXED: Check quota availability untuk WeeklyQuota system
+     */
+    public function checkQuotaAvailability($doctorId, $tanggalAntrian): array
+    {
+        if (!$doctorId) {
+            return [
+                'available' => true,
+                'quota' => null,
+                'message' => 'Non-session queue - no quota limit'
+            ];
+        }
+        
+        $tanggalCarbon = Carbon::parse($tanggalAntrian);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quota = WeeklyQuota::where('doctor_schedule_id', $doctorId)
+            ->where('day_of_week', $dayOfWeek)
+            ->where('is_active', true)
+            ->first();
+        
+        if (!$quota) {
+            // Auto-create quota with default 20
+            $quota = WeeklyQuota::create([
+                'doctor_schedule_id' => $doctorId,
+                'day_of_week' => $dayOfWeek,
+                'total_quota' => 20,
+                'is_active' => true,
+            ]);
+        }
+        
+        $available = $quota->available_quota_today > 0;
+        
+        return [
+            'available' => $available,
+            'quota' => $quota,
+            'message' => $available 
+                ? "Kuota tersedia: {$quota->available_quota_today}/{$quota->total_quota}"
+                : "Kuota sudah penuh: {$quota->used_quota_today}/{$quota->total_quota}"
+        ];
+    }
+
+    /**
+     * ✅ UPDATED: cancelQueue dengan WeeklyQuota decrement
+     */
+    public function cancelQueue(Queue $queue)
+    {
+        if (!in_array($queue->status, ['waiting', 'serving'])) {
+            return;
+        }
+
+        DB::transaction(function () use ($queue) {
+            $queue->update([
+                'status' => 'canceled',
+                'canceled_at' => now()
+            ]);
+            
+            // ✅ FIXED: WeeklyQuota akan auto-recalculate dari actual queues
+            // Tidak perlu manual decrement
+            
+            // UPDATE estimasi queue lain setelah ada yang cancel
+            if ($queue->status === 'waiting') {
+                if ($queue->doctor_id) {
+                    $this->updateSessionEstimations($queue->service_id, $queue->tanggal_antrian, $queue->doctor_id);
+                } else {
+                    $this->updateEstimationsAfterQueueCalled($queue->service_id, $queue->tanggal_antrian);
+                }
+            }
+        });
+    }
+
+    /**
+     * ✅ FIXED: Get quota summary untuk WeeklyQuota system
+     */
+    public function getQuotaSummaryForDate($date): array
+    {
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quotas = WeeklyQuota::with('doctorSchedule.service')
+            ->where('day_of_week', $dayOfWeek)
+            ->where('is_active', true)
+            ->get();
+
+        return [
+            'total_doctors' => $quotas->count(),
+            'total_quota' => $quotas->sum('total_quota'),
+            'total_used' => $quotas->sum(function($quota) use ($date) {
+                return $quota->getUsedQuotaForDate($date);
+            }),
+            'total_available' => $quotas->sum(function($quota) use ($date) {
+                return $quota->getAvailableQuotaForDate($date);
+            }),
+            'full_quotas' => $quotas->filter(function($quota) use ($date) {
+                return $quota->isQuotaFullForDate($date);
+            })->count(),
+            'nearly_full_quotas' => $quotas->filter(function($quota) use ($date) {
+                return $quota->isQuotaNearlyFullForDate($date);
+            })->count(),
+        ];
+    }
+
+    /**
+     * ✅ FIXED: Get quota alerts untuk WeeklyQuota system
+     */
+    public function getQuotaAlerts($date = null): array
+    {
+        $date = $date ?? today();
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quotas = WeeklyQuota::with('doctorSchedule.service')
+            ->where('day_of_week', $dayOfWeek)
+            ->where('is_active', true)
+            ->get();
+        
+        $alerts = [
+            'full' => $quotas->filter(function($quota) use ($date) {
+                return $quota->isQuotaFullForDate($date);
+            }),
+            'nearly_full' => $quotas->filter(function($quota) use ($date) {
+                return $quota->isQuotaNearlyFullForDate($date);
+            }),
+            'available' => $quotas->filter(function($quota) use ($date) {
+                return $quota->getAvailableQuotaForDate($date) > 0 && !$quota->isQuotaNearlyFullForDate($date);
+            }),
+        ];
+        
+        return [
+            'date' => Carbon::parse($date)->format('d F Y'),
+            'total_quotas' => $quotas->count(),
+            'full_count' => $alerts['full']->count(),
+            'nearly_full_count' => $alerts['nearly_full']->count(),
+            'available_count' => $alerts['available']->count(),
+            'alerts' => $alerts,
+            'summary' => $this->getQuotaSummaryForDate($date),
+        ];
+    }
+
+    /**
+     * ✅ EXISTING: Generate nomor antrian berdasarkan session dokter
+     */
+    public function generateNumberForSession($serviceId, $tanggalAntrian, $doctorId = null)
+    {
+        $service = Service::findOrFail($serviceId);
+        
+        if ($doctorId) {
+            // ✅ NOMOR BERDASARKAN SESSION DOKTER
+            $lastQueue = Queue::where('service_id', $serviceId)
+                ->where('doctor_id', $doctorId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->orderByDesc('id')
+                ->first();
+        } else {
+            // Fallback ke sistem lama (berdasarkan tanggal saja)
+            $lastQueue = Queue::where('service_id', $serviceId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->whereNull('doctor_id')
+                ->orderByDesc('id')
+                ->first();
+        }
+        
+        $lastQueueNumber = $lastQueue ? intval(
+            substr($lastQueue->number, strlen($service->prefix))
+        ) : 0;
+
+        $newQueueNumber = $lastQueueNumber + 1;
+        $maximumNumber = pow(10, $service->padding) - 1;
+
+        // Reset ke 1 jika sudah mencapai maksimum
+        if ($newQueueNumber > $maximumNumber) {
+            $newQueueNumber = 1;
+        }
+
+        return $service->prefix . str_pad($newQueueNumber, $service->padding, "0", STR_PAD_LEFT);
     }
 
     /**
@@ -161,47 +364,8 @@ class QueueService
                 );
             }
         }
-        // ✅ PERBAIKAN: Untuk tanggal masa depan, tidak perlu cek waktu
         
         return true;
-    }
-
-    /**
-     * ✅ NEW: Generate nomor antrian berdasarkan session dokter
-     */
-    public function generateNumberForSession($serviceId, $tanggalAntrian, $doctorId = null)
-    {
-        $service = Service::findOrFail($serviceId);
-        
-        if ($doctorId) {
-            // ✅ NOMOR BERDASARKAN SESSION DOKTER
-            $lastQueue = Queue::where('service_id', $serviceId)
-                ->where('doctor_id', $doctorId)
-                ->whereDate('tanggal_antrian', $tanggalAntrian)
-                ->orderByDesc('id')
-                ->first();
-        } else {
-            // Fallback ke sistem lama (berdasarkan tanggal saja)
-            $lastQueue = Queue::where('service_id', $serviceId)
-                ->whereDate('tanggal_antrian', $tanggalAntrian)
-                ->whereNull('doctor_id')
-                ->orderByDesc('id')
-                ->first();
-        }
-        
-        $lastQueueNumber = $lastQueue ? intval(
-            substr($lastQueue->number, strlen($service->prefix))
-        ) : 0;
-
-        $newQueueNumber = $lastQueueNumber + 1;
-        $maximumNumber = pow(10, $service->padding) - 1;
-
-        // Reset ke 1 jika sudah mencapai maksimum
-        if ($newQueueNumber > $maximumNumber) {
-            $newQueueNumber = 1;
-        }
-
-        return $service->prefix . str_pad($newQueueNumber, $service->padding, "0", STR_PAD_LEFT);
     }
 
     /**
@@ -482,99 +646,12 @@ class QueueService
         }
     }
 
-    /**
-     * ✅ UPDATED: Update overdue queues dengan session support
-     */
-    public function updateOverdueQueuesForDate($tanggalAntrian = null)
-    {
-        $tanggalAntrian = $tanggalAntrian ?? today();
-        
-        // Update session-based queues (ada doctor_id)
-        $sessionsWithOverdue = Queue::where('status', 'waiting')
-            ->whereDate('tanggal_antrian', $tanggalAntrian)
-            ->whereNotNull('doctor_id')
-            ->where('estimated_call_time', '<', now())
-            ->select('doctor_id')
-            ->distinct()
-            ->pluck('doctor_id');
-        
-        $updatedCount = 0;
-        
-        // Update per session dokter
-        foreach ($sessionsWithOverdue as $doctorId) {
-            $sessionQueues = Queue::where('status', 'waiting')
-                ->where('doctor_id', $doctorId)
-                ->whereDate('tanggal_antrian', $tanggalAntrian)
-                ->get();
-            
-            foreach ($sessionQueues as $queue) {
-                $newExtraDelay = $queue->extra_delay_minutes + 5;
-                
-                $doctor = DoctorSchedule::find($doctorId);
-                if ($doctor) {
-                    $queuePosition = Queue::where('doctor_id', $doctorId)
-                        ->where('status', 'waiting')
-                        ->where('id', '<', $queue->id)
-                        ->whereDate('tanggal_antrian', $tanggalAntrian)
-                        ->count() + 1;
-                    
-                    $baseMinutes = $queuePosition * 15;
-                    $totalMinutes = $baseMinutes + $newExtraDelay;
-                    
-                    if (Carbon::parse($tanggalAntrian)->isToday()) {
-                        $sessionStartDateTime = Carbon::parse($tanggalAntrian)->setTimeFromTimeString($doctor->start_time->format('H:i'));
-                        $startTime = now()->max($sessionStartDateTime);
-                        $newEstimation = $startTime->addMinutes($totalMinutes - $baseMinutes + 5);
-                    } else {
-                        $startTime = Carbon::parse($tanggalAntrian)->setTimeFromTimeString($doctor->start_time->format('H:i'));
-                        $newEstimation = $startTime->addMinutes($totalMinutes);
-                    }
-                    
-                    $queue->update([
-                        'estimated_call_time' => $newEstimation,
-                        'extra_delay_minutes' => $newExtraDelay
-                    ]);
-                    
-                    $updatedCount++;
-                }
-            }
-        }
-        
-        // Update non-session queues (fallback ke sistem lama)
-        $nonSessionQueues = Queue::where('status', 'waiting')
-            ->whereDate('tanggal_antrian', $tanggalAntrian)
-            ->whereNull('doctor_id')
-            ->where('estimated_call_time', '<', now())
-            ->get();
-        
-        foreach ($nonSessionQueues as $queue) {
-            $newExtraDelay = $queue->extra_delay_minutes + 5;
-            $newEstimation = now()->addMinutes(5);
-            
-            $queue->update([
-                'estimated_call_time' => $newEstimation,
-                'extra_delay_minutes' => $newExtraDelay
-            ]);
-            
-            $updatedCount++;
-        }
-        
-        return $updatedCount;
-    }
-
-    // ✅ EXISTING METHODS tetap untuk backward compatibility
-
-    /**
-     * ✅ LEGACY method untuk backward compatibility
-     */
+    // ✅ LEGACY METHODS untuk backward compatibility
     public function generateNumber($serviceId)
     {
         return $this->generateNumberForDate($serviceId, today());
     }
 
-    /**
-     * ✅ LEGACY method untuk backward compatibility
-     */
     public function updateOverdueQueues()
     {
         return $this->updateOverdueQueuesForDate(today());
@@ -621,43 +698,6 @@ class QueueService
             'status' => 'finished',
             'finished_at' => now()
         ]);
-    }
-
-    /**
-     * ✅ UPDATED: cancelQueue dengan quota decrement
-     */
-    public function cancelQueue(Queue $queue)
-    {
-        if (!in_array($queue->status, ['waiting', 'serving'])) {
-            return;
-        }
-
-        DB::transaction(function () use ($queue) {
-            $queue->update([
-                'status' => 'canceled',
-                'canceled_at' => now()
-            ]);
-            
-            // ✅ NEW: Decrement quota jika ada doctor_id
-            if ($queue->doctor_id && $queue->tanggal_antrian) {
-                $quota = DailyQuota::where('doctor_schedule_id', $queue->doctor_id)
-                    ->where('quota_date', $queue->tanggal_antrian)
-                    ->first();
-                
-                if ($quota) {
-                    $quota->decrementUsedQuota();
-                }
-            }
-            
-            // UPDATE estimasi queue lain setelah ada yang cancel
-            if ($queue->status === 'waiting') {
-                if ($queue->doctor_id) {
-                    $this->updateSessionEstimations($queue->service_id, $queue->tanggal_antrian, $queue->doctor_id);
-                } else {
-                    $this->updateEstimationsAfterQueueCalled($queue->service_id, $queue->tanggal_antrian);
-                }
-            }
-        });
     }
 
     public function searchUserByIdentifier(string $identifier): ?User
@@ -751,49 +791,84 @@ class QueueService
         return $updatedCount;
     }
 
-    // ✅ NEW QUOTA INTEGRATION METHODS
-
     /**
-     * ✅ NEW: Check quota availability sebelum create queue
+     * ✅ UPDATED: Update overdue queues dengan session support
      */
-    public function checkQuotaAvailability($doctorId, $tanggalAntrian): array
+    public function updateOverdueQueuesForDate($tanggalAntrian = null)
     {
-        if (!$doctorId) {
-            return [
-                'available' => true,
-                'quota' => null,
-                'message' => 'Non-session queue - no quota limit'
-            ];
+        $tanggalAntrian = $tanggalAntrian ?? today();
+        
+        // Update session-based queues (ada doctor_id)
+        $sessionsWithOverdue = Queue::where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
+            ->whereNotNull('doctor_id')
+            ->where('estimated_call_time', '<', now())
+            ->select('doctor_id')
+            ->distinct()
+            ->pluck('doctor_id');
+        
+        $updatedCount = 0;
+        
+        // Update per session dokter
+        foreach ($sessionsWithOverdue as $doctorId) {
+            $sessionQueues = Queue::where('status', 'waiting')
+                ->where('doctor_id', $doctorId)
+                ->whereDate('tanggal_antrian', $tanggalAntrian)
+                ->get();
+            
+            foreach ($sessionQueues as $queue) {
+                $newExtraDelay = $queue->extra_delay_minutes + 5;
+                
+                $doctor = DoctorSchedule::find($doctorId);
+                if ($doctor) {
+                    $queuePosition = Queue::where('doctor_id', $doctorId)
+                        ->where('status', 'waiting')
+                        ->where('id', '<', $queue->id)
+                        ->whereDate('tanggal_antrian', $tanggalAntrian)
+                        ->count() + 1;
+                    
+                    $baseMinutes = $queuePosition * 15;
+                    $totalMinutes = $baseMinutes + $newExtraDelay;
+                    
+                    if (Carbon::parse($tanggalAntrian)->isToday()) {
+                        $sessionStartDateTime = Carbon::parse($tanggalAntrian)->setTimeFromTimeString($doctor->start_time->format('H:i'));
+                        $startTime = now()->max($sessionStartDateTime);
+                        $newEstimation = $startTime->addMinutes($totalMinutes - $baseMinutes + 5);
+                    } else {
+                        $startTime = Carbon::parse($tanggalAntrian)->setTimeFromTimeString($doctor->start_time->format('H:i'));
+                        $newEstimation = $startTime->addMinutes($totalMinutes);
+                    }
+                    
+                    $queue->update([
+                        'estimated_call_time' => $newEstimation,
+                        'extra_delay_minutes' => $newExtraDelay
+                    ]);
+                    
+                    $updatedCount++;
+                }
+            }
         }
         
-        $quota = DailyQuota::where('doctor_schedule_id', $doctorId)
-            ->where('quota_date', $tanggalAntrian)
-            ->where('is_active', true)
-            ->first();
+        // Update non-session queues (fallback ke sistem lama)
+        $nonSessionQueues = Queue::where('status', 'waiting')
+            ->whereDate('tanggal_antrian', $tanggalAntrian)
+            ->whereNull('doctor_id')
+            ->where('estimated_call_time', '<', now())
+            ->get();
         
-        if (!$quota) {
-            // Auto-create quota with default 20
-            $quota = DailyQuota::getOrCreateQuota($doctorId, $tanggalAntrian, 20);
-            $quota->updateUsedQuota(); // Sync dengan antrian yang sudah ada
+        foreach ($nonSessionQueues as $queue) {
+            $newExtraDelay = $queue->extra_delay_minutes + 5;
+            $newEstimation = now()->addMinutes(5);
+            
+            $queue->update([
+                'estimated_call_time' => $newEstimation,
+                'extra_delay_minutes' => $newExtraDelay
+            ]);
+            
+            $updatedCount++;
         }
         
-        $available = !$quota->isQuotaFull();
-        
-        return [
-            'available' => $available,
-            'quota' => $quota,
-            'message' => $available 
-                ? "Kuota tersedia: {$quota->available_quota}/{$quota->total_quota}"
-                : "Kuota sudah penuh: {$quota->used_quota}/{$quota->total_quota}"
-        ];
-    }
-
-    /**
-     * ✅ NEW: Get quota summary untuk tanggal tertentu
-     */
-    public function getQuotaSummaryForDate($date): array
-    {
-        return DailyQuota::getQuotaSummaryForDate($date);
+        return $updatedCount;
     }
 
     /**
@@ -810,10 +885,10 @@ class QueueService
                 'available' => $quotaCheck['available'],
                 'quota' => $quotaCheck['quota'] ? [
                     'total' => $quotaCheck['quota']->total_quota,
-                    'used' => $quotaCheck['quota']->used_quota,
-                    'remaining' => $quotaCheck['quota']->available_quota,
-                    'percentage' => $quotaCheck['quota']->usage_percentage,
-                    'status' => $quotaCheck['quota']->status_label,
+                    'used' => $quotaCheck['quota']->used_quota_today,
+                    'remaining' => $quotaCheck['quota']->available_quota_today,
+                    'percentage' => $quotaCheck['quota']->usage_percentage_today,
+                    'status' => $quotaCheck['quota']->status_label_today,
                 ] : null,
                 'message' => $quotaCheck['message'],
             ];
@@ -826,9 +901,9 @@ class QueueService
     }
 
     /**
-     * ✅ NEW: Bulk create quotas untuk semua dokter
+     * ✅ FIXED: Bulk create quotas untuk semua dokter (WeeklyQuota)
      */
-    public function createDailyQuotasForDate($date, $defaultQuota = 20): array
+    public function createWeeklyQuotasForDate($date, $defaultQuota = 20): array
     {
         $tanggalCarbon = Carbon::parse($date);
         $dayOfWeek = strtolower($tanggalCarbon->format('l'));
@@ -843,28 +918,25 @@ class QueueService
         $results = [];
         
         foreach ($doctors as $doctor) {
-            $quota = DailyQuota::where('doctor_schedule_id', $doctor->id)
-                ->where('quota_date', $date)
+            $quota = WeeklyQuota::where('doctor_schedule_id', $doctor->id)
+                ->where('day_of_week', $dayOfWeek)
                 ->first();
             
             if (!$quota) {
-                $quota = DailyQuota::create([
+                $quota = WeeklyQuota::create([
                     'doctor_schedule_id' => $doctor->id,
-                    'quota_date' => $date,
+                    'day_of_week' => $dayOfWeek,
                     'total_quota' => $defaultQuota,
-                    'used_quota' => 0,
                     'is_active' => true,
                 ]);
                 
-                // Sync dengan antrian yang sudah ada
-                $quota->updateUsedQuota();
                 $created++;
                 
                 $results[] = [
                     'doctor' => $doctor->doctor_name,
                     'service' => $doctor->service->name ?? 'Unknown',
                     'action' => 'created',
-                    'quota' => $quota->formatted_quota,
+                    'quota' => "{$quota->getUsedQuotaForDate($date)}/{$quota->total_quota}",
                 ];
             } else {
                 $existing++;
@@ -872,7 +944,7 @@ class QueueService
                     'doctor' => $doctor->doctor_name,
                     'service' => $doctor->service->name ?? 'Unknown',
                     'action' => 'existing',
-                    'quota' => $quota->formatted_quota,
+                    'quota' => "{$quota->getUsedQuotaForDate($date)}/{$quota->total_quota}",
                 ];
             }
         }
@@ -886,18 +958,21 @@ class QueueService
     }
 
     /**
-     * ✅ NEW: Sync all quotas untuk tanggal tertentu
+     * ✅ FIXED: Sync all quotas untuk tanggal tertentu (WeeklyQuota)
      */
     public function syncQuotasForDate($date): array
     {
-        $quotas = DailyQuota::where('quota_date', $date)->get();
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quotas = WeeklyQuota::where('day_of_week', $dayOfWeek)->get();
         $synced = 0;
         $results = [];
         
         foreach ($quotas as $quota) {
-            $oldUsed = $quota->used_quota;
-            $quota->updateUsedQuota();
-            $newUsed = $quota->fresh()->used_quota;
+            $oldUsed = $quota->getUsedQuotaForDate($date);
+            // WeeklyQuota auto-calculates from actual queues, so no manual sync needed
+            $newUsed = $quota->getUsedQuotaForDate($date);
             
             if ($oldUsed !== $newUsed) {
                 $synced++;
@@ -916,35 +991,6 @@ class QueueService
             'synced' => $synced,
             'total_quotas' => $quotas->count(),
             'results' => $results,
-        ];
-    }
-
-    /**
-     * ✅ NEW: Get quota alerts (nearly full, full, etc.)
-     */
-    public function getQuotaAlerts($date = null): array
-    {
-        $date = $date ?? today();
-        
-        $quotas = DailyQuota::with('doctorSchedule.service')
-            ->where('quota_date', $date)
-            ->where('is_active', true)
-            ->get();
-        
-        $alerts = [
-            'full' => $quotas->filter->isQuotaFull(),
-            'nearly_full' => $quotas->filter->isQuotaNearlyFull(),
-            'available' => $quotas->filter(fn($q) => $q->available_quota > 0 && !$q->isQuotaNearlyFull()),
-        ];
-        
-        return [
-            'date' => Carbon::parse($date)->format('d F Y'),
-            'total_quotas' => $quotas->count(),
-            'full_count' => $alerts['full']->count(),
-            'nearly_full_count' => $alerts['nearly_full']->count(),
-            'available_count' => $alerts['available']->count(),
-            'alerts' => $alerts,
-            'summary' => DailyQuota::getQuotaSummaryForDate($date),
         ];
     }
 }

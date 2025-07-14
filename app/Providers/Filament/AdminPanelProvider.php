@@ -1,6 +1,6 @@
 <?php
 // File: app/Providers/Filament/AdminPanelProvider.php
-// FINAL: AdminPanelProvider dengan Patient Management dan DailyQuota Integration
+// FINAL: AdminPanelProvider dengan Branding, Patient Management, dan DailyQuota Integration
 
 namespace App\Providers\Filament;
 
@@ -31,6 +31,10 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            // ✅ BRANDING - GANTI NAMA ATAU LOGO DI SINI
+            ->brandName('Klinik Pratama Hadiana Sehat') // ⬅️ Tampilkan tulisan
+            // ->brandLogo(asset('assets/img/logo/logoklinikpratama.png')) // ⬅️ (Opsional) Ganti ke logo gambar
+
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
@@ -39,11 +43,11 @@ class AdminPanelProvider extends PanelProvider
             ->resources([
                 // ✅ REGISTER RESOURCES: Urutan sesuai prioritas di dashboard
                 \App\Filament\Resources\PatientManagementResource::class,  // Data Pasien
-                \App\Filament\Resources\DailyQuotaResource::class,         // ✅ NEW: Kuota Antrian
+                \App\Filament\Resources\WeeklyQuotaResource::class,         // ✅ NEW: Kuota Antrian
                 \App\Filament\Resources\CounterResource::class,            // Kelola Loket
                 \App\Filament\Resources\QueueResource::class,              // Antrian
                 \App\Filament\Resources\DoctorScheduleResource::class,     // Jadwal Dokter
-                \App\Filament\Resources\ServiceResource::class,           // Layanan
+                \App\Filament\Resources\ServiceResource::class,            // Layanan
                 \App\Filament\Resources\MedicalRecordResource::class,      // Medical Records
                 // Resource lain akan di-discover otomatis jika ada
             ])
