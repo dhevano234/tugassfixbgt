@@ -294,7 +294,7 @@ class MedicalRecordResource extends Resource
                     }),
 
                 Tables\Columns\TextColumn::make('doctor.name')
-                    ->label('Petugas')
+                    ->label('Dokter')
                     ->searchable()
                     ->badge()
                     ->color('success'),
