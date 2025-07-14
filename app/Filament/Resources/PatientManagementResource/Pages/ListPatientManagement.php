@@ -25,70 +25,9 @@ class ListPatientManagement extends ListRecords
         ];
     }
 
-    public function getTabs(): array
-    {
-        return [
-            'all' => Tab::make('Semua Pasien')
-                ->icon('heroicon-m-users')
-                ->badge(function () {
-                    return \App\Models\User::where('role', 'user')->count();
-                }),
+    
 
-            'has_mrn' => Tab::make('Punya No. RM')
-                ->icon('heroicon-m-identification')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereNotNull('medical_record_number'))
-                ->badge(function () {
-                    return \App\Models\User::where('role', 'user')
-                        ->whereNotNull('medical_record_number')
-                        ->count();
-                })
-                ->badgeColor('success'),
-
-            'no_mrn' => Tab::make('Belum Ada No. RM')
-                ->icon('heroicon-m-exclamation-triangle')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereNull('medical_record_number'))
-                ->badge(function () {
-                    return \App\Models\User::where('role', 'user')
-                        ->whereNull('medical_record_number')
-                        ->count();
-                })
-                ->badgeColor('danger'),
-
-            'incomplete' => Tab::make('Data Belum Lengkap')
-                ->icon('heroicon-m-exclamation-circle')
-                ->modifyQueryUsing(function (Builder $query) {
-                    return $query->where(function ($q) {
-                        $q->whereNull('phone')
-                          ->orWhereNull('gender')
-                          ->orWhereNull('birth_date')
-                          ->orWhereNull('address')
-                          ->orWhere('address', 'Alamat belum diisi');
-                    });
-                })
-                ->badge(function () {
-                    return \App\Models\User::where('role', 'user')
-                        ->where(function ($q) {
-                            $q->whereNull('phone')
-                              ->orWhereNull('gender')
-                              ->orWhereNull('birth_date')
-                              ->orWhereNull('address')
-                              ->orWhere('address', 'Alamat belum diisi');
-                        })
-                        ->count();
-                })
-                ->badgeColor('warning'),
-
-            'recent' => Tab::make('Terdaftar Hari Ini')
-                ->icon('heroicon-m-clock')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereDate('created_at', today()))
-                ->badge(function () {
-                    return \App\Models\User::where('role', 'user')
-                        ->whereDate('created_at', today())
-                        ->count();
-                })
-                ->badgeColor('info'),
-        ];
-    }
+            
 }
 
 // =================================================================
