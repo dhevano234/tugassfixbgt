@@ -1,6 +1,4 @@
 <?php
-// File: app/Filament/Resources/MedicalRecordResource.php
-// ADMIN PANEL - PERSIS SAMA dengan versi dokter
 
 namespace App\Filament\Resources;
 
@@ -52,7 +50,7 @@ class MedicalRecordResource extends Resource
                     ->visible(fn () => request()->has('queue_number')),
 
                 // ✅ SECTION: Data Pasien - Grid 2 kolom
-                Forms\Components\Section::make('Data Pasien')
+                Forms\Components\Section::make('Data Periksa')
                     ->description('Pilih pasien untuk membuat rekam medis')
                     ->schema([
                         Forms\Components\Grid::make(2)
@@ -107,6 +105,23 @@ class MedicalRecordResource extends Resource
                                     ->placeholder('Akan terisi otomatis setelah pilih pasien')
                                     ->helperText('Nomor rekam medis akan terisi otomatis')
                                     ->default(''),
+
+                                // ✅ DROPDOWN PILIH DOKTER - REVISI MINIMAL
+                                Forms\Components\Select::make('doctor_id')
+                                    ->label('Dokter yang Menangani')
+                                    ->options(function () {
+                                        return User::where('role', 'dokter')           // UBAH: whereIn jadi where
+                                            ->whereNotNull('name')                      // TAMBAH: filter nama tidak null
+                                            ->where('name', '!=', '')                   // TAMBAH: filter nama tidak kosong
+                                            ->orderBy('name')
+                                            ->pluck('name', 'id');
+                                    })
+                                    ->required()
+                                    ->searchable()
+                                    ->placeholder('Pilih dokter yang menangani pasien')
+                                    ->helperText('Pilih dokter yang menangani pemeriksaan ini')  // UBAH: hapus kata "admin"
+                                    // ->default(Auth::id()) // HAPUS BARIS INI
+                                    ->columnSpanFull(),
                             ]),
                     ])
                     ->collapsible(),
@@ -214,9 +229,8 @@ class MedicalRecordResource extends Resource
                             ->columnSpanFull(),
                     ]),
 
-                // Hidden fields - SAMA SEPERTI DOKTER
-                Forms\Components\Hidden::make('doctor_id')
-                    ->default(Auth::id()), // Admin yang login jadi doctor_id
+                // ✅ HIDDEN FIELD SUDAH TIDAK DIPERLUKAN KARENA ADA DROPDOWN DOKTER
+                // Forms\Components\Hidden::make('doctor_id')->default(Auth::id()),
             ]);
     }
 
@@ -340,7 +354,12 @@ class MedicalRecordResource extends Resource
                         ->icon('heroicon-o-printer')
                         ->color('info')
                         ->action(function (MedicalRecord $record) {
-                            // Logic untuk print bisa ditambahkan di sini
+                            // ✅ Logic untuk print - bisa dikembangkan nanti
+                            \Filament\Notifications\Notification::make()
+                                ->title('Print Feature')
+                                ->body('Fitur print akan dikembangkan selanjutnya')
+                                ->info()
+                                ->send();
                         }),
 
                     Tables\Actions\DeleteAction::make()
@@ -355,15 +374,79 @@ class MedicalRecordResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->label('Hapus Terpilih'),
+                        ->label('Hapus Terpilih')
+                        ->requiresConfirmation(),
                         
+                    // ✅ HANYA BULK EXPORT - BISA PILIH SEMUA ATAU SEBAGIAN
                     Tables\Actions\BulkAction::make('export')
                         ->label('Export Data')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('success')
                         ->action(function ($records) {
-                            // Logic export bisa ditambahkan di sini
-                        }),
+                            // ✅ SIMPLE EXPORT LOGIC
+                            $filename = 'rekam_medis_' . now()->format('Y-m-d_H-i-s') . '.csv';
+                            
+                            $headers = [
+                                'Content-Type' => 'text/csv; charset=UTF-8',
+                                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                            ];
+
+                            $callback = function() use ($records) {
+                                $file = fopen('php://output', 'w');
+                                
+                                // ✅ Add BOM for UTF-8
+                                fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+                                
+                                // Header CSV
+                                fputcsv($file, [
+                                    'No. Rekam Medis',
+                                    'Nama Pasien',
+                                    'No. Telepon',
+                                    'Jenis Kelamin',
+                                    'Umur',
+                                    'Keluhan Utama',
+                                    'Tanda Vital',
+                                    'Diagnosis',
+                                    'Resep Obat',
+                                    'Catatan Tambahan',
+                                    'Dokter/Petugas',
+                                    'Tanggal Pemeriksaan',
+                                    'Waktu Pemeriksaan'
+                                ]);
+
+                                // Data rows
+                                foreach ($records as $record) {
+                                    fputcsv($file, [
+                                        $record->user->medical_record_number ?? 'Belum ada',
+                                        $record->user->name ?? '-',
+                                        $record->user->phone ?? '-',
+                                        $record->user->gender ?? '-',
+                                        $record->user->age ? $record->user->age . ' tahun' : '-',
+                                        $record->chief_complaint ?? '-',
+                                        $record->vital_signs ?? '-',
+                                        $record->diagnosis ?? '-',
+                                        $record->prescription ?? '-',
+                                        $record->additional_notes ?? '-',
+                                        $record->doctor->name ?? '-',
+                                        $record->created_at->format('d/m/Y'),
+                                        $record->created_at->format('H:i:s')
+                                    ]);
+                                }
+
+                                fclose($file);
+                            };
+
+                            // ✅ Show success notification
+                            \Filament\Notifications\Notification::make()
+                                ->title('Export Berhasil')
+                                ->body('Data rekam medis berhasil diekspor ke file CSV')
+                                ->success()
+                                ->duration(5000)
+                                ->send();
+
+                            return response()->stream($callback, 200, $headers);
+                        })
+                        ->tooltip('Pilih data yang ingin diekspor, lalu klik tombol ini'),
                 ]),
             ])
             ->searchable()
