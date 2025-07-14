@@ -10,58 +10,53 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
+use Carbon\Carbon;
 
 class WeeklyQuotaResource extends Resource
 {
     protected static ?string $model = WeeklyQuota::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
+
     protected static ?string $navigationLabel = 'Kuota Antrian';
-    protected static ?string $modelLabel = 'Kuota Antrian';
+
+    protected static ?string $modelLabel = 'Kuota Mingguan';
+
     protected static ?string $pluralModelLabel = 'Kuota Antrian';
-    protected static ?string $navigationGroup = 'Administrasi';
-    protected static ?int $navigationSort = 6;
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Pengaturan Kuota Antrian')
-                    ->description('Atur kuota per hari dalam seminggu untuk dokter')
+                Forms\Components\Section::make('Informasi Kuota')
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\Select::make('doctor_schedule_id')
                                     ->label('Dokter')
-                                    ->relationship('doctorSchedule', 'doctor_name')
-                                    ->getOptionLabelFromRecordUsing(fn (DoctorSchedule $record): string => 
-                                        $record->doctor_name . ' - ' . ($record->service->name ?? 'Unknown') . 
-                                        ' (' . $record->start_time->format('H:i') . ' - ' . $record->end_time->format('H:i') . ')'
+                                    ->required()
+                                    ->options(
+                                        DoctorSchedule::where('is_active', true)
+                                            ->with('service')
+                                            ->get()
+                                            ->mapWithKeys(function ($doctor) {
+                                                return [
+                                                    $doctor->id => $doctor->doctor_name . ' - ' . 
+                                                        ($doctor->service->name ?? 'Unknown') .
+                                                        ' (' . $doctor->start_time->format('H:i') . ' - ' . 
+                                                        $doctor->end_time->format('H:i') . ')'
+                                                ];
+                                            })
                                     )
                                     ->searchable()
-                                    ->required()
-                                    ->live()
-                                    ->afterStateUpdated(function ($state, callable $set, callable $get) {
-                                        $dayOfWeek = $get('day_of_week');
-                                        if ($state && $dayOfWeek) {
-                                            $existingQuota = WeeklyQuota::where('doctor_schedule_id', $state)
-                                                ->where('day_of_week', $dayOfWeek)
-                                                ->first();
-                                            
-                                            if ($existingQuota) {
-                                                $set('existing_quota_warning', 
-                                                    "Kuota untuk dokter ini pada hari {$existingQuota->day_name_indonesia} sudah ada: {$existingQuota->total_quota}"
-                                                );
-                                            } else {
-                                                $set('existing_quota_warning', null);
-                                            }
-                                        }
-                                    })
-                                    ->helperText('Pilih dokter yang akan diberi kuota'),
+                                    ->preload()
+                                    ->helperText('Pilih dokter dan layanan'),
 
                                 Forms\Components\Select::make('day_of_week')
-                                    ->label('Hari')
+                                    ->label('Hari Praktek')
+                                    ->required()
                                     ->options([
                                         'monday' => 'Senin',
                                         'tuesday' => 'Selasa',
@@ -71,11 +66,10 @@ class WeeklyQuotaResource extends Resource
                                         'saturday' => 'Sabtu',
                                         'sunday' => 'Minggu',
                                     ])
-                                    ->required()
-                                    ->live()
+                                    ->reactive()
                                     ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                         $doctorId = $get('doctor_schedule_id');
-                                        if ($state && $doctorId) {
+                                        if ($doctorId && $state) {
                                             $existingQuota = WeeklyQuota::where('doctor_schedule_id', $doctorId)
                                                 ->where('day_of_week', $state)
                                                 ->first();
@@ -174,66 +168,115 @@ class WeeklyQuotaResource extends Resource
                     ->color('info')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('formatted_quota_today')
-                    ->label('Hari Ini')
-                    ->badge()
-                    ->color(fn (WeeklyQuota $record): string => $record->getStatusColor())
-                    ->visible(fn () => true)
-                    ->tooltip(fn (WeeklyQuota $record) => 
-                        $record->day_of_week === strtolower(today()->format('l')) 
-                            ? "Penggunaan hari ini: {$record->usage_percentage_today}%"
-                            : "Bukan hari praktik hari ini"
-                    ),
-
-                Tables\Columns\TextColumn::make('usage_percentage_today')
-                    ->label('Penggunaan')
-                    ->formatStateUsing(function (WeeklyQuota $record): string {
-                        if ($record->day_of_week !== strtolower(today()->format('l'))) {
-                            return '-';
+                // ✅ FIXED: Tampilkan quota sesuai hari praktik, bukan selalu "hari ini"
+                Tables\Columns\TextColumn::make('quota_for_practice_day')
+                    ->label('Kuota Hari Praktik')
+                    ->getStateUsing(function (WeeklyQuota $record) {
+                        // ✅ Hitung untuk hari praktik yang sesuai, bukan selalu hari ini
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            // Jika hari ini adalah hari praktik, tampilkan quota hari ini
+                            return $record->getFormattedQuotaForDate($today);
+                        } else {
+                            // Jika bukan hari praktik hari ini, cari tanggal terdekat untuk hari praktik tersebut
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return $record->getFormattedQuotaForDate($nextPracticeDate);
                         }
-                        return number_format($record->usage_percentage_today, 1) . '%';
                     })
-                    ->color(fn (WeeklyQuota $record): string => 
-                        $record->day_of_week === strtolower(today()->format('l')) 
-                            ? $record->getStatusColor() 
-                            : 'gray'
-                    )
+                    ->badge()
+                    ->color(function (WeeklyQuota $record): string {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return $record->getStatusColorForDate($today);
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return $record->getStatusColorForDate($nextPracticeDate);
+                        }
+                    })
+                    ->tooltip(function (WeeklyQuota $record) {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return "Hari ini ({$today->format('d/m/Y')}) - Penggunaan: {$record->getUsagePercentageForDate($today)}%";
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return "Hari praktik berikutnya ({$nextPracticeDate->format('d/m/Y')}) - Penggunaan: {$record->getUsagePercentageForDate($nextPracticeDate)}%";
+                        }
+                    }),
+
+                Tables\Columns\TextColumn::make('usage_percentage_practice_day')
+                    ->label('Penggunaan')
+                    ->getStateUsing(function (WeeklyQuota $record): string {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return number_format($record->getUsagePercentageForDate($today), 1) . '%';
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return number_format($record->getUsagePercentageForDate($nextPracticeDate), 1) . '%';
+                        }
+                    })
+                    ->color(function (WeeklyQuota $record): string {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return $record->getStatusColorForDate($today);
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return $record->getStatusColorForDate($nextPracticeDate);
+                        }
+                    })
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('status_label_today')
+                Tables\Columns\TextColumn::make('status_practice_day')
                     ->label('Status')
-                    ->badge()
-                    ->color(fn (WeeklyQuota $record): string => 
-                        $record->day_of_week === strtolower(today()->format('l')) 
-                            ? $record->getStatusColor() 
-                            : 'gray'
-                    )
-                    ->formatStateUsing(function (WeeklyQuota $record): string {
-                        if ($record->day_of_week !== strtolower(today()->format('l'))) {
-                            return 'Tidak Aktif';
+                    ->getStateUsing(function (WeeklyQuota $record): string {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return $record->getStatusLabelForDate($today);
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return $record->getStatusLabelForDate($nextPracticeDate);
                         }
-                        return $record->status_label_today;
+                    })
+                    ->badge()
+                    ->color(function (WeeklyQuota $record): string {
+                        $today = today();
+                        $practiceDay = $record->day_of_week;
+                        $todayDayOfWeek = strtolower($today->format('l'));
+                        
+                        if ($practiceDay === $todayDayOfWeek) {
+                            return $record->getStatusColorForDate($today);
+                        } else {
+                            $nextPracticeDate = static::getNextDateForDayOfWeek($practiceDay);
+                            return $record->getStatusColorForDate($nextPracticeDate);
+                        }
                     }),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')
                     ->boolean()
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Dibuat')
-                    ->dateTime('d/m/Y H:i')
-                    ->sortable()
-                    ->toggleable()
-                    ->toggledHiddenByDefault(),
+                    ->trueIcon('heroicon-s-check-circle')
+                    ->falseIcon('heroicon-s-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger'),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('doctor_schedule_id')
-                    ->label('Dokter')
-                    ->relationship('doctorSchedule', 'doctor_name')
-                    ->searchable()
-                    ->preload(),
-
                 Tables\Filters\SelectFilter::make('day_of_week')
                     ->label('Hari')
                     ->options([
@@ -244,34 +287,18 @@ class WeeklyQuotaResource extends Resource
                         'friday' => 'Jumat',
                         'saturday' => 'Sabtu',
                         'sunday' => 'Minggu',
-                    ])
-                    ->multiple(),
-
-                Tables\Filters\SelectFilter::make('status')
-                    ->label('Status Hari Ini')
-                    ->options([
-                        'available' => 'Tersedia',
-                        'near_full' => 'Hampir Penuh',
-                        'full' => 'Penuh',
-                        'empty' => 'Kosong',
-                        'inactive' => 'Tidak Aktif Hari Ini',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        $value = $data['value'] ?? null;
-                        $todayDayOfWeek = strtolower(today()->format('l'));
-                        
-                        return match($value) {
-                            'available' => $query->where('day_of_week', $todayDayOfWeek),
-                            'inactive' => $query->where('day_of_week', '!=', $todayDayOfWeek),
-                            default => $query,
-                        };
-                    }),
-
+                    ]),
+                
                 Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Status Aktif')
+                    ->label('Status')
+                    ->placeholder('Semua Status')
                     ->trueLabel('Aktif')
-                    ->falseLabel('Tidak Aktif')
-                    ->native(false),
+                    ->falseLabel('Tidak Aktif'),
+                    
+                Tables\Filters\Filter::make('today_practice')
+                    ->label('Praktik Hari Ini')
+                    ->query(fn ($query) => $query->where('day_of_week', strtolower(today()->format('l'))))
+                    ->toggle(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
@@ -281,42 +308,37 @@ class WeeklyQuotaResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    
-                    Tables\Actions\BulkAction::make('update_quota_amount')
-                        ->label('Update Jumlah Kuota')
-                        ->icon('heroicon-o-pencil')
-                        ->color('warning')
-                        ->form([
-                            Forms\Components\TextInput::make('new_quota_amount')
-                                ->label('Jumlah Kuota Baru')
-                                ->numeric()
-                                ->required()
-                                ->minValue(1)
-                                ->maxValue(100)
-                                ->helperText('Masukkan jumlah kuota baru untuk semua item yang dipilih'),
-                        ])
-                        ->action(function ($records, array $data) {
-                            $newAmount = $data['new_quota_amount'];
-                            $count = 0;
-                            
-                            foreach ($records as $record) {
-                                $record->update(['total_quota' => $newAmount]);
-                                $count++;
-                            }
-                            
-                            \Filament\Notifications\Notification::make()
-                                ->title('Kuota Berhasil Diperbarui')
-                                ->body("Berhasil update {$count} kuota menjadi {$newAmount}")
-                                ->success()
-                                ->send();
-                        })
-                        ->requiresConfirmation()
-                        ->modalHeading('Update Jumlah Kuota')
-                        ->modalSubmitActionLabel('Ya, Update'),
                 ]),
             ])
-            ->defaultSort('doctor_schedule_id')
-            ->poll('30s');
+            ->defaultSort('day_of_week', 'asc');
+    }
+
+    /**
+     * ✅ HELPER: Get next date for specific day of week
+     */
+    public static function getNextDateForDayOfWeek(string $dayOfWeek): Carbon
+    {
+        $today = today();
+        $todayDayOfWeek = strtolower($today->format('l'));
+        
+        if ($todayDayOfWeek === $dayOfWeek) {
+            return $today;
+        }
+        
+        // Cari tanggal berikutnya untuk hari tersebut
+        $daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        $currentDayIndex = array_search($todayDayOfWeek, $daysOfWeek);
+        $targetDayIndex = array_search($dayOfWeek, $daysOfWeek);
+        
+        if ($targetDayIndex > $currentDayIndex) {
+            // Hari target masih dalam minggu ini
+            $daysToAdd = $targetDayIndex - $currentDayIndex;
+        } else {
+            // Hari target di minggu depan
+            $daysToAdd = (7 - $currentDayIndex) + $targetDayIndex;
+        }
+        
+        return $today->copy()->addDays($daysToAdd);
     }
 
     public static function getRelations(): array
@@ -334,29 +356,5 @@ class WeeklyQuotaResource extends Resource
             'view' => Pages\ViewWeeklyQuota::route('/{record}'),
             'edit' => Pages\EditWeeklyQuota::route('/{record}/edit'),
         ];
-    }
-
-    public static function getNavigationBadge(): ?string
-    {
-        $todayDayOfWeek = strtolower(today()->format('l'));
-        return static::getModel()::where('day_of_week', $todayDayOfWeek)
-            ->where('is_active', true)
-            ->count();
-    }
-
-    public static function getNavigationBadgeColor(): ?string
-    {
-        $todayDayOfWeek = strtolower(today()->format('l'));
-        $todayQuotas = static::getModel()::where('day_of_week', $todayDayOfWeek)
-            ->where('is_active', true)
-            ->get();
-        
-        $fullQuotas = $todayQuotas->filter(fn ($quota) => $quota->isQuotaFullToday())->count();
-        
-        if ($fullQuotas > 0) {
-            return 'warning';
-        }
-        
-        return $todayQuotas->count() > 0 ? 'success' : 'gray';
     }
 }

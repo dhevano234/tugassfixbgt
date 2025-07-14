@@ -41,7 +41,7 @@ class WeeklyQuota extends Model
             ->whereDate('tanggal_antrian', today());
     }
 
-    // ✅ Accessors
+    // ✅ Accessors (untuk hari ini saja - backward compatibility)
     public function getDayNameIndonesiaAttribute(): string
     {
         $days = [
@@ -59,67 +59,36 @@ class WeeklyQuota extends Model
 
     public function getUsedQuotaTodayAttribute(): int
     {
-        $today = today();
-        $todayDayOfWeek = strtolower($today->format('l'));
-        
-        if ($todayDayOfWeek !== $this->day_of_week) {
-            return 0;
-        }
-
-        return Queue::where('doctor_id', $this->doctor_schedule_id)
-            ->whereDate('tanggal_antrian', $today)
-            ->whereIn('status', ['waiting', 'serving', 'finished'])
-            ->count();
+        return $this->getUsedQuotaForDate(today());
     }
 
     public function getAvailableQuotaTodayAttribute(): int
     {
-        return max(0, $this->total_quota - $this->used_quota_today);
+        return $this->getAvailableQuotaForDate(today());
     }
 
     public function getUsagePercentageTodayAttribute(): float
     {
-        if ($this->total_quota == 0) return 0;
-        return round(($this->used_quota_today / $this->total_quota) * 100, 1);
+        return $this->getUsagePercentageForDate(today());
     }
 
     public function getStatusLabelTodayAttribute(): string
     {
-        $percentage = $this->usage_percentage_today;
-        
-        if ($percentage >= 100) return 'Penuh';
-        if ($percentage >= 80) return 'Hampir Penuh';
-        if ($percentage >= 50) return 'Sedang';
-        if ($percentage > 0) return 'Tersedia';
-        return 'Kosong';
+        return $this->getStatusLabelForDate(today());
     }
 
     public function getFormattedQuotaTodayAttribute(): string
     {
-        return "{$this->used_quota_today}/{$this->total_quota}";
+        return $this->getFormattedQuotaForDate(today());
     }
 
-    // ✅ Methods
-    public function isQuotaFullToday(): bool
-    {
-        return $this->used_quota_today >= $this->total_quota;
-    }
-
-    public function canAddQueueToday(): bool
-    {
-        $today = today();
-        $todayDayOfWeek = strtolower($today->format('l'));
-        
-        return $this->is_active 
-            && $todayDayOfWeek === $this->day_of_week 
-            && !$this->isQuotaFullToday();
-    }
-
+    // ✅ NEW: Methods untuk tanggal spesifik (FIXED untuk hari besok dst)
     public function getUsedQuotaForDate($date): int
     {
         $dateCarbon = Carbon::parse($date);
         $dayOfWeek = strtolower($dateCarbon->format('l'));
         
+        // ✅ FIXED: Hanya cek hari yang sama, tidak peduli hari ini atau besok
         if ($dayOfWeek !== $this->day_of_week) {
             return 0;
         }
@@ -130,14 +99,74 @@ class WeeklyQuota extends Model
             ->count();
     }
 
+    public function getAvailableQuotaForDate($date): int
+    {
+        return max(0, $this->total_quota - $this->getUsedQuotaForDate($date));
+    }
+
+    public function getUsagePercentageForDate($date): float
+    {
+        if ($this->total_quota == 0) return 0;
+        return round(($this->getUsedQuotaForDate($date) / $this->total_quota) * 100, 1);
+    }
+
+    public function getStatusLabelForDate($date): string
+    {
+        $percentage = $this->getUsagePercentageForDate($date);
+        
+        if ($percentage >= 100) return 'Penuh';
+        if ($percentage >= 80) return 'Hampir Penuh';
+        if ($percentage >= 50) return 'Sedang';
+        if ($percentage > 0) return 'Tersedia';
+        return 'Kosong';
+    }
+
+    public function getFormattedQuotaForDate($date): string
+    {
+        return "{$this->getUsedQuotaForDate($date)}/{$this->total_quota}";
+    }
+
+    // ✅ Methods
+    public function isQuotaFullToday(): bool
+    {
+        return $this->isQuotaFullForDate(today());
+    }
+
     public function isQuotaFullForDate($date): bool
     {
         return $this->getUsedQuotaForDate($date) >= $this->total_quota;
     }
 
+    public function canAddQueueToday(): bool
+    {
+        return $this->canAddQueueForDate(today());
+    }
+
+    public function canAddQueueForDate($date): bool
+    {
+        $dateCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($dateCarbon->format('l'));
+        
+        return $this->is_active 
+            && $dayOfWeek === $this->day_of_week 
+            && !$this->isQuotaFullForDate($date);
+    }
+
+    // ✅ NEW: Methods untuk nearly full
+    public function isQuotaNearlyFullForDate($date): bool
+    {
+        return $this->getUsagePercentageForDate($date) >= 80 
+            && !$this->isQuotaFullForDate($date);
+    }
+
     public function getStatusColor(): string
     {
-        $percentage = $this->usage_percentage_today;
+        return $this->getStatusColorForDate(today());
+    }
+
+    public function getStatusColorForDate($date): string
+    {
+        $percentage = $this->getUsagePercentageForDate($date);
         
         if ($percentage >= 100) return 'danger';
         if ($percentage >= 80) return 'warning';
@@ -194,6 +223,36 @@ class WeeklyQuota extends Model
                 'can_add_queue' => $quota->canAddQueueToday(),
                 'time_range' => $quota->doctorSchedule->time_range ?? 'Unknown',
                 'status_color' => $quota->getStatusColor(),
+            ];
+        })->toArray();
+    }
+
+    // ✅ NEW: Get quotas untuk tanggal spesifik
+    public static function getQuotasForDate($date): array
+    {
+        $dateCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($dateCarbon->format('l'));
+        
+        $quotas = self::with('doctorSchedule.service')
+            ->where('day_of_week', $dayOfWeek)
+            ->where('is_active', true)
+            ->get();
+
+        return $quotas->map(function ($quota) use ($date) {
+            return [
+                'id' => $quota->id,
+                'doctor_name' => $quota->doctorSchedule->doctor_name,
+                'service_name' => $quota->doctorSchedule->service->name ?? 'Unknown',
+                'total_quota' => $quota->total_quota,
+                'used_quota' => $quota->getUsedQuotaForDate($date),
+                'available_quota' => $quota->getAvailableQuotaForDate($date),
+                'usage_percentage' => $quota->getUsagePercentageForDate($date),
+                'status_label' => $quota->getStatusLabelForDate($date),
+                'formatted_quota' => $quota->getFormattedQuotaForDate($date),
+                'is_full' => $quota->isQuotaFullForDate($date),
+                'can_add_queue' => $quota->canAddQueueForDate($date),
+                'time_range' => $quota->doctorSchedule->time_range ?? 'Unknown',
+                'status_color' => $quota->getStatusColorForDate($date),
             ];
         })->toArray();
     }
@@ -283,5 +342,11 @@ class WeeklyQuota extends Model
     {
         $todayDayOfWeek = strtolower(today()->format('l'));
         return $query->where('day_of_week', $todayDayOfWeek);
+    }
+
+    public function scopeForDate($query, $date)
+    {
+        $dayOfWeek = strtolower(Carbon::parse($date)->format('l'));
+        return $query->where('day_of_week', $dayOfWeek);
     }
 }

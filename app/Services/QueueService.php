@@ -1,5 +1,5 @@
 <?php
-// File: app/Services/QueueService.php - FIXED: WeeklyQuota Integration
+// File: app/Services/QueueService.php - FIXED: WeeklyQuota Integration untuk semua tanggal
 
 namespace App\Services;
 
@@ -16,7 +16,7 @@ use Carbon\Carbon;
 class QueueService
 {
     /**
-     * ✅ UPDATED: Get available doctor sessions - Simplified dengan quota check
+     * ✅ FIXED: Get available doctor sessions - Support untuk semua tanggal
      */
     public function getAvailableDoctorSessions($tanggalAntrian)
     {
@@ -42,7 +42,7 @@ class QueueService
             ->get();
             
         return $doctors->map(function($doctor) use ($tanggalAntrian, $isToday) {
-            // ✅ UPDATED: Cek quota availability
+            // ✅ FIXED: Cek quota availability untuk tanggal spesifik
             $quotaCheck = $this->checkQuotaAvailability($doctor->id, $tanggalAntrian);
             
             return [
@@ -55,9 +55,9 @@ class QueueService
                 'is_available' => $quotaCheck['available'],
                 'quota_status' => $quotaCheck['available'] ? 'Tersedia' : 'Penuh',
                 'quota_info' => $quotaCheck['quota'] ? [
-                    'used' => $quotaCheck['quota']->used_quota_today,
+                    'used' => $quotaCheck['quota']->getUsedQuotaForDate($tanggalAntrian), // ✅ FIXED
                     'total' => $quotaCheck['quota']->total_quota,
-                    'remaining' => $quotaCheck['quota']->available_quota_today
+                    'remaining' => $quotaCheck['quota']->getAvailableQuotaForDate($tanggalAntrian) // ✅ FIXED
                 ] : null,
                 'is_today' => $isToday,
                 'selected_date' => $tanggalAntrian
@@ -153,7 +153,7 @@ class QueueService
     }
 
     /**
-     * ✅ FIXED: Check quota availability untuk WeeklyQuota system
+     * ✅ FIXED: Check quota availability untuk WeeklyQuota system - SUPPORT SEMUA TANGGAL
      */
     public function checkQuotaAvailability($doctorId, $tanggalAntrian): array
     {
@@ -183,14 +183,15 @@ class QueueService
             ]);
         }
         
-        $available = $quota->available_quota_today > 0;
+        // ✅ FIXED: Gunakan method untuk tanggal spesifik, bukan today
+        $available = $quota->getAvailableQuotaForDate($tanggalAntrian) > 0;
         
         return [
             'available' => $available,
             'quota' => $quota,
             'message' => $available 
-                ? "Kuota tersedia: {$quota->available_quota_today}/{$quota->total_quota}"
-                : "Kuota sudah penuh: {$quota->used_quota_today}/{$quota->total_quota}"
+                ? "Kuota tersedia: {$quota->getFormattedQuotaForDate($tanggalAntrian)}"
+                : "Kuota sudah penuh: {$quota->getFormattedQuotaForDate($tanggalAntrian)}"
         ];
     }
 
@@ -224,7 +225,7 @@ class QueueService
     }
 
     /**
-     * ✅ FIXED: Get quota summary untuk WeeklyQuota system
+     * ✅ FIXED: Get quota summary untuk WeeklyQuota system - SUPPORT SEMUA TANGGAL
      */
     public function getQuotaSummaryForDate($date): array
     {
@@ -255,7 +256,7 @@ class QueueService
     }
 
     /**
-     * ✅ FIXED: Get quota alerts untuk WeeklyQuota system
+     * ✅ FIXED: Get quota alerts untuk WeeklyQuota system - SUPPORT SEMUA TANGGAL
      */
     public function getQuotaAlerts($date = null): array
     {
@@ -646,6 +647,129 @@ class QueueService
         }
     }
 
+    /**
+     * ✅ FIXED: Get available doctors dengan quota info untuk tanggal spesifik
+     */
+    public function getAvailableDoctorSessionsWithQuota($tanggalAntrian)
+    {
+        $sessions = $this->getAvailableDoctorSessions($tanggalAntrian);
+        
+        return $sessions->map(function ($session) use ($tanggalAntrian) {
+            $quotaCheck = $this->checkQuotaAvailability($session['id'], $tanggalAntrian);
+            
+            $session['quota_info'] = [
+                'available' => $quotaCheck['available'],
+                'quota' => $quotaCheck['quota'] ? [
+                    'total' => $quotaCheck['quota']->total_quota,
+                    'used' => $quotaCheck['quota']->getUsedQuotaForDate($tanggalAntrian), // ✅ FIXED
+                    'remaining' => $quotaCheck['quota']->getAvailableQuotaForDate($tanggalAntrian), // ✅ FIXED
+                    'percentage' => $quotaCheck['quota']->getUsagePercentageForDate($tanggalAntrian), // ✅ FIXED
+                    'status' => $quotaCheck['quota']->getStatusLabelForDate($tanggalAntrian), // ✅ FIXED
+                ] : null,
+                'message' => $quotaCheck['message'],
+            ];
+            
+            return $session;
+        })->filter(function ($session) {
+            // Filter hanya yang masih ada quota
+            return $session['quota_info']['available'];
+        });
+    }
+
+    /**
+     * ✅ FIXED: Bulk create quotas untuk semua dokter (WeeklyQuota)
+     */
+    public function createWeeklyQuotasForDate($date, $defaultQuota = 20): array
+    {
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        // Get all active doctors yang praktik di hari tersebut
+        $doctors = DoctorSchedule::where('is_active', true)
+            ->whereJsonContains('days', $dayOfWeek)
+            ->get();
+        
+        $created = 0;
+        $existing = 0;
+        $results = [];
+        
+        foreach ($doctors as $doctor) {
+            $quota = WeeklyQuota::where('doctor_schedule_id', $doctor->id)
+                ->where('day_of_week', $dayOfWeek)
+                ->first();
+            
+            if (!$quota) {
+                $quota = WeeklyQuota::create([
+                    'doctor_schedule_id' => $doctor->id,
+                    'day_of_week' => $dayOfWeek,
+                    'total_quota' => $defaultQuota,
+                    'is_active' => true,
+                ]);
+                
+                $created++;
+                
+                $results[] = [
+                    'doctor' => $doctor->doctor_name,
+                    'service' => $doctor->service->name ?? 'Unknown',
+                    'action' => 'created',
+                    'quota' => $quota->getFormattedQuotaForDate($date), // ✅ FIXED
+                ];
+            } else {
+                $existing++;
+                $results[] = [
+                    'doctor' => $doctor->doctor_name,
+                    'service' => $doctor->service->name ?? 'Unknown',
+                    'action' => 'existing',
+                    'quota' => $quota->getFormattedQuotaForDate($date), // ✅ FIXED
+                ];
+            }
+        }
+        
+        return [
+            'created' => $created,
+            'existing' => $existing,
+            'total_doctors' => $doctors->count(),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * ✅ FIXED: Sync all quotas untuk tanggal tertentu (WeeklyQuota)
+     */
+    public function syncQuotasForDate($date): array
+    {
+        $tanggalCarbon = Carbon::parse($date);
+        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
+        
+        $quotas = WeeklyQuota::where('day_of_week', $dayOfWeek)->get();
+        $synced = 0;
+        $results = [];
+        
+        foreach ($quotas as $quota) {
+            $oldUsed = $quota->getUsedQuotaForDate($date);
+            // WeeklyQuota auto-calculates from actual queues, so no manual sync needed
+            $newUsed = $quota->getUsedQuotaForDate($date);
+            
+            if ($oldUsed !== $newUsed) {
+                $synced++;
+            }
+            
+            $results[] = [
+                'doctor' => $quota->doctorSchedule->doctor_name ?? 'Unknown',
+                'old_used' => $oldUsed,
+                'new_used' => $newUsed,
+                'total' => $quota->total_quota,
+                'changed' => $oldUsed !== $newUsed,
+            ];
+        }
+        
+        return [
+            'synced' => $synced,
+            'total_quotas' => $quotas->count(),
+            'results' => $results,
+        ];
+    }
+
     // ✅ LEGACY METHODS untuk backward compatibility
     public function generateNumber($serviceId)
     {
@@ -869,128 +993,5 @@ class QueueService
         }
         
         return $updatedCount;
-    }
-
-    /**
-     * ✅ NEW: Get available doctors dengan quota info
-     */
-    public function getAvailableDoctorSessionsWithQuota($tanggalAntrian)
-    {
-        $sessions = $this->getAvailableDoctorSessions($tanggalAntrian);
-        
-        return $sessions->map(function ($session) use ($tanggalAntrian) {
-            $quotaCheck = $this->checkQuotaAvailability($session['id'], $tanggalAntrian);
-            
-            $session['quota_info'] = [
-                'available' => $quotaCheck['available'],
-                'quota' => $quotaCheck['quota'] ? [
-                    'total' => $quotaCheck['quota']->total_quota,
-                    'used' => $quotaCheck['quota']->used_quota_today,
-                    'remaining' => $quotaCheck['quota']->available_quota_today,
-                    'percentage' => $quotaCheck['quota']->usage_percentage_today,
-                    'status' => $quotaCheck['quota']->status_label_today,
-                ] : null,
-                'message' => $quotaCheck['message'],
-            ];
-            
-            return $session;
-        })->filter(function ($session) {
-            // Filter hanya yang masih ada quota
-            return $session['quota_info']['available'];
-        });
-    }
-
-    /**
-     * ✅ FIXED: Bulk create quotas untuk semua dokter (WeeklyQuota)
-     */
-    public function createWeeklyQuotasForDate($date, $defaultQuota = 20): array
-    {
-        $tanggalCarbon = Carbon::parse($date);
-        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
-        
-        // Get all active doctors yang praktik di hari tersebut
-        $doctors = DoctorSchedule::where('is_active', true)
-            ->whereJsonContains('days', $dayOfWeek)
-            ->get();
-        
-        $created = 0;
-        $existing = 0;
-        $results = [];
-        
-        foreach ($doctors as $doctor) {
-            $quota = WeeklyQuota::where('doctor_schedule_id', $doctor->id)
-                ->where('day_of_week', $dayOfWeek)
-                ->first();
-            
-            if (!$quota) {
-                $quota = WeeklyQuota::create([
-                    'doctor_schedule_id' => $doctor->id,
-                    'day_of_week' => $dayOfWeek,
-                    'total_quota' => $defaultQuota,
-                    'is_active' => true,
-                ]);
-                
-                $created++;
-                
-                $results[] = [
-                    'doctor' => $doctor->doctor_name,
-                    'service' => $doctor->service->name ?? 'Unknown',
-                    'action' => 'created',
-                    'quota' => "{$quota->getUsedQuotaForDate($date)}/{$quota->total_quota}",
-                ];
-            } else {
-                $existing++;
-                $results[] = [
-                    'doctor' => $doctor->doctor_name,
-                    'service' => $doctor->service->name ?? 'Unknown',
-                    'action' => 'existing',
-                    'quota' => "{$quota->getUsedQuotaForDate($date)}/{$quota->total_quota}",
-                ];
-            }
-        }
-        
-        return [
-            'created' => $created,
-            'existing' => $existing,
-            'total_doctors' => $doctors->count(),
-            'results' => $results,
-        ];
-    }
-
-    /**
-     * ✅ FIXED: Sync all quotas untuk tanggal tertentu (WeeklyQuota)
-     */
-    public function syncQuotasForDate($date): array
-    {
-        $tanggalCarbon = Carbon::parse($date);
-        $dayOfWeek = strtolower($tanggalCarbon->format('l'));
-        
-        $quotas = WeeklyQuota::where('day_of_week', $dayOfWeek)->get();
-        $synced = 0;
-        $results = [];
-        
-        foreach ($quotas as $quota) {
-            $oldUsed = $quota->getUsedQuotaForDate($date);
-            // WeeklyQuota auto-calculates from actual queues, so no manual sync needed
-            $newUsed = $quota->getUsedQuotaForDate($date);
-            
-            if ($oldUsed !== $newUsed) {
-                $synced++;
-            }
-            
-            $results[] = [
-                'doctor' => $quota->doctorSchedule->doctor_name ?? 'Unknown',
-                'old_used' => $oldUsed,
-                'new_used' => $newUsed,
-                'total' => $quota->total_quota,
-                'changed' => $oldUsed !== $newUsed,
-            ];
-        }
-        
-        return [
-            'synced' => $synced,
-            'total_quotas' => $quotas->count(),
-            'results' => $results,
-        ];
     }
 }
