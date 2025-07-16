@@ -1,4 +1,7 @@
 <?php
+// File: database/migrations/2025_06_01_070931_update_queues_table_for_admin.php
+// FIXED: Ganti patient_id dengan user_id
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -8,9 +11,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('queues', function (Blueprint $table) {
-            // Pastikan kolom patient_id ada (mungkin sudah ada)
-            if (!Schema::hasColumn('queues', 'patient_id')) {
-                $table->foreignId('patient_id')->nullable()->after('service_id')->constrained()->cascadeOnDelete();
+            // ✅ GANTI: patient_id → user_id dan reference ke users
+            if (!Schema::hasColumn('queues', 'user_id')) {
+                $table->foreignId('user_id')->nullable()->after('service_id')->constrained('users')->cascadeOnDelete();
             }
             
             // Pastikan kolom status ada dengan nilai default
@@ -37,7 +40,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('queues', function (Blueprint $table) {
-            $table->dropColumn(['patient_id', 'status', 'called_at', 'served_at', 'finished_at', 'canceled_at']);
+            // ✅ GANTI: Hapus user_id bukan patient_id
+            $table->dropColumn(['user_id', 'status', 'called_at', 'served_at', 'finished_at', 'canceled_at']);
         });
     }
 };
