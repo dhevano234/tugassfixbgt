@@ -35,6 +35,8 @@ class MedicalRecordResource extends Resource
     {
         return $form
             ->schema([
+
+
                 // Info jika dari antrian  
                 Forms\Components\Placeholder::make('queue_info')
                     ->label('📋 Rekam Medis dari Antrian')
@@ -207,27 +209,49 @@ class MedicalRecordResource extends Resource
                                     ->rows(3)
                                     ->placeholder('TD: 120/80 mmHg' . "\n" . 'Nadi: 80x/menit' . "\n" . 'Suhu: 36.5°C' . "\n" . 'RR: 20x/menit'),
 
-                                // Diagnosis (Optional untuk admin)
+                                // ========================================
+                                // 🔥 DIAGNOSIS - READONLY UNTUK ADMIN
+                                // ========================================
                                 Forms\Components\Textarea::make('diagnosis')
                                     ->label('Diagnosis')
                                     ->rows(3)
-                                    ->placeholder('Tuliskan diagnosis berdasarkan pemeriksaan...'),
+                                    ->placeholder('Tuliskan diagnosis berdasarkan pemeriksaan...')
+                                    ->disabled(fn () => Auth::user()->role === 'admin')
+                                    ->dehydrated()
+                                    ->helperText(function () {
+                                        if (Auth::user()->role === 'admin') {
+                                            return;
+                                        }
+                                        return 'Diagnosis berdasarkan pemeriksaan medis';
+                                    }),
                             ]),
 
-                        // Resep Obat (Optional)
+                        // ========================================
+                        // 🔥 RESEP OBAT - READONLY UNTUK ADMIN  
+                        // ========================================
                         Forms\Components\Textarea::make('prescription')
                             ->label('Resep Obat')
                             ->rows(3)
                             ->placeholder('Contoh:' . "\n" . 'Paracetamol 500mg 3x1' . "\n" . 'Amoxicillin 250mg 3x1' . "\n" . 'Vitamin C 1x1')
-                            ->columnSpanFull(),
+                            ->columnSpanFull()
+                            ->disabled(fn () => Auth::user()->role === 'admin')
+                            ->dehydrated()
+                            ->helperText(function () {
+                                if (Auth::user()->role === 'admin') {
+                                    return;
+                                }
+                                return 'Resep obat untuk pasien';
+                            }),
 
-                        // Catatan Tambahan (Optional)
+                        // Catatan Tambahan (tetap bisa diisi admin)
                         Forms\Components\Textarea::make('additional_notes')
                             ->label('Catatan Tambahan')
                             ->rows(2)
                             ->placeholder('Catatan tambahan, instruksi khusus, atau follow-up yang diperlukan...')
                             ->columnSpanFull(),
                     ]),
+
+
 
                 // ✅ HIDDEN FIELD SUDAH TIDAK DIPERLUKAN KARENA ADA DROPDOWN DOKTER
                 // Forms\Components\Hidden::make('doctor_id')->default(Auth::id()),

@@ -1,5 +1,5 @@
 <?php
-// app/Providers/Filament/DokterPanelProvider.php
+// File: app/Providers/Filament/DokterPanelProvider.php
 
 namespace App\Providers\Filament;
 
@@ -10,6 +10,7 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Navigation\MenuItem;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -28,12 +29,20 @@ class DokterPanelProvider extends PanelProvider
                 'primary' => Color::Green,
             ])
             ->login()
-            ->authGuard('dokter') // ✅ Set guard dokter
-            ->brandName('KLINIK PRATAMA HADIANA SEHAT')
+            ->authGuard('dokter')
+            ->brandName('Klinik Pratama Hadiana Sehat')
             ->discoverResources(in: app_path('Filament/Dokter/Resources'), for: 'App\\Filament\\Dokter\\Resources')
             ->discoverPages(in: app_path('Filament/Dokter/Pages'), for: 'App\\Filament\\Dokter\\Pages')
             ->pages([
                 \App\Filament\Dokter\Pages\Dashboard::class,
+                \App\Filament\Dokter\Pages\EditProfile::class,
+            ])
+            // ✅ Tambahkan user menu items
+            ->userMenuItems([
+                MenuItem::make()
+                    ->label('Edit Profile')
+                    ->url(fn (): string => \App\Filament\Dokter\Pages\EditProfile::getUrl())
+                    ->icon('heroicon-o-user-circle'),
             ])
             ->middleware([
                 EncryptCookies::class,
