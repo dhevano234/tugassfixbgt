@@ -1,5 +1,5 @@
 {{-- File: resources/views/filament/pages/admin-dashboard.blade.php --}}
-{{-- UPDATE: Tambah card Patient Management --}}
+{{-- FIXED: Single root element untuk Livewire --}}
 
 <x-filament-panels::page>
 <div class="space-y-6">
@@ -41,8 +41,8 @@
     </div>
 
     {{-- Main Navigation Cards - Grid dengan Patient Management --}}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
-        {{-- Data Pasien - BARU --}}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {{-- Data Pasien --}}
         <a href="{{ url('/admin/patient-management') }}" 
            class="block bg-white rounded-lg shadow border hover:shadow-md transition-shadow">
             <div class="p-6">
@@ -162,38 +162,6 @@
                 </div>
             </div>
         </a>
-    </div>
-
-    {{-- Kiosk Section --}}
-    <div class="bg-white rounded-lg shadow border p-6">
-        <h3 class="text-lg font-medium text-gray-900 mb-4">Antrian</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <a href="{{ url('/admin/queue-kiosk') }}" 
-               class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-amber-300 hover:bg-amber-50 transition-colors">
-                <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mr-4">
-                    <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
-                    </svg>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-900">Ambil Antrian</h4>
-                    <p class="text-sm text-gray-500">Kiosk untuk pasien ambil nomor antrian</p>
-                </div>
-            </a>
-
-            <a href="{{ url('/admin/dashboardkiosantrian') }}" 
-               class="flex items-center p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors">
-                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                    </svg>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-900">Monitor Ruang Tunggu</h4>
-                    <p class="text-sm text-gray-500">Display antrian untuk ruang tunggu</p>
-                </div>
-            </a>
-        </div>
     </div>
 
     {{-- Test Audio Button (hanya untuk development) --}}
